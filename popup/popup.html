@@ -4,80 +4,40 @@
   <meta charset="utf-8">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      width: 320px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #fafafa;
-      color: #1a1a2e;
-    }
-    .header {
-      padding: 16px 20px;
-      background: #1e3a5f;
-      color: white;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    .header img { width: 28px; height: 28px; border-radius: 6px; }
-    .header h1 { font-size: 15px; font-weight: 700; }
-    .header p { font-size: 11px; opacity: 0.7; }
+    body { width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a2e; }
+    .header { padding: 14px 16px; background: #1e3a5f; color: white; }
+    .header h1 { font-size: 14px; font-weight: 700; }
+    .header p { font-size: 10px; opacity: 0.6; margin-top: 2px; }
+    .content { padding: 14px 16px; }
 
-    .content { padding: 16px 20px; }
-
-    .status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 14px;
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 500;
-      margin-bottom: 12px;
-    }
+    .status { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; margin-bottom: 10px; }
     .status.ok { background: #ecfdf5; color: #065f46; }
     .status.warn { background: #fef3c7; color: #92400e; }
-    .status .dot {
-      width: 8px; height: 8px; border-radius: 50%;
-    }
+    .status .dot { width: 7px; height: 7px; border-radius: 50%; }
     .status.ok .dot { background: #10b981; }
     .status.warn .dot { background: #f59e0b; }
 
-    .btn {
-      display: block;
-      width: 100%;
-      padding: 10px;
-      border-radius: 10px;
-      border: none;
-      font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      text-align: center;
-      text-decoration: none;
-      transition: all 0.15s;
-      margin-bottom: 8px;
-    }
+    .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .stat { text-align: center; padding: 10px 4px; background: white; border-radius: 10px; border: 1px solid #e5e7eb; }
+    .stat-num { font-size: 20px; font-weight: 800; color: #1e3a5f; }
+    .stat-label { font-size: 10px; color: #9ca3af; font-weight: 500; margin-top: 2px; }
+
+    .btn { display: block; width: 100%; padding: 9px; border-radius: 8px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; transition: all 0.15s; margin-bottom: 6px; }
     .btn-primary { background: #1e3a5f; color: white; }
     .btn-primary:hover { background: #15304f; }
-    .btn-outline {
-      background: white;
-      color: #1e3a5f;
-      border: 1px solid #d1d5db;
-    }
+    .btn-outline { background: white; color: #1e3a5f; border: 1px solid #d1d5db; }
     .btn-outline:hover { background: #f3f4f6; }
 
-    .divider {
-      height: 1px;
-      background: #e5e7eb;
-      margin: 12px 0;
-    }
+    .divider { height: 1px; background: #e5e7eb; margin: 10px 0; }
 
-    .footer {
-      padding: 12px 20px;
-      text-align: center;
-      font-size: 11px;
-      color: #9ca3af;
-      border-top: 1px solid #e5e7eb;
-    }
+    .recent-item { padding: 6px 0; border-bottom: 1px solid #f3f4f6; }
+    .recent-item:last-child { border-bottom: none; }
+    .recent-title { font-size: 12px; font-weight: 600; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .recent-company { font-size: 10px; color: #9ca3af; }
+
+    .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #9ca3af; margin-bottom: 6px; }
+
+    .footer { padding: 10px 16px; text-align: center; font-size: 10px; color: #9ca3af; border-top: 1px solid #e5e7eb; }
     .footer a { color: #1e3a5f; text-decoration: none; }
 
     #login-section, #main-section { display: none; }
@@ -87,60 +47,50 @@
 </head>
 <body class="logged-out">
   <div class="header">
-    <div>
-      <h1>JobSwiper</h1>
-      <p>AI-powered job prep</p>
-    </div>
+    <h1>JobSwiper</h1>
+    <p>AI-powered job prep</p>
   </div>
 
   <!-- Not logged in -->
   <div id="login-section" class="content">
-    <div class="status warn">
-      <div class="dot"></div>
-      Not connected
-    </div>
-    <a href="https://www.jobswiper.ai/login" target="_blank" class="btn btn-primary">
-      Log in to JobSwiper
-    </a>
-    <p style="font-size: 11px; color: #9ca3af; text-align: center; margin-top: 8px;">
-      Log in, then come back here to connect
-    </p>
+    <div class="status warn"><div class="dot"></div>Not connected</div>
+    <a href="http://localhost:3001/login" target="_blank" class="btn btn-primary">Log in to JobSwiper</a>
+    <p style="font-size:10px;color:#9ca3af;text-align:center;margin-top:6px">Log in, then come back here</p>
   </div>
 
   <!-- Logged in -->
   <div id="main-section" class="content">
-    <div class="status ok">
-      <div class="dot"></div>
-      Connected
+    <div class="status ok"><div class="dot"></div>Connected</div>
+
+    <!-- Stats -->
+    <div id="stats" class="stats">
+      <div class="stat"><div class="stat-num">-</div><div class="stat-label">Saved</div></div>
+      <div class="stat"><div class="stat-num">-</div><div class="stat-label">Applied</div></div>
+      <div class="stat"><div class="stat-num">-</div><div class="stat-label">Interviews</div></div>
     </div>
 
-    <p style="font-size: 13px; margin-bottom: 12px; color: #4b5563;">
-      Browse any job board and look for the <strong>"Save to JobSwiper"</strong> button on job pages.
-    </p>
+    <!-- Profile bar -->
+    <div id="profile-bar" style="margin-bottom:12px"></div>
 
     <div class="divider"></div>
 
-    <a href="https://www.jobswiper.ai/dashboard/jobs" target="_blank" class="btn btn-outline">
-      My Saved Jobs
-    </a>
-    <a href="https://www.indeed.com" target="_blank" class="btn btn-outline">
-      Browse Indeed
-    </a>
-    <a href="https://www.linkedin.com/jobs" target="_blank" class="btn btn-outline">
-      Browse LinkedIn
-    </a>
+    <!-- Recent saves -->
+    <div class="section-title">Recent saves</div>
+    <div id="recent-saves" style="margin-bottom:10px">
+      <div style="text-align:center;color:#9ca3af;font-size:11px;padding:8px">Loading...</div>
+    </div>
 
     <div class="divider"></div>
 
-    <button id="logout-btn" class="btn btn-outline" style="color: #ef4444; border-color: #fecaca;">
-      Disconnect
-    </button>
+    <a href="http://localhost:3001/dashboard/jobs" target="_blank" class="btn btn-outline">My Saved Jobs</a>
+    <a href="https://www.indeed.com" target="_blank" class="btn btn-outline">Browse Indeed</a>
+    <a href="https://www.linkedin.com/jobs" target="_blank" class="btn btn-outline">Browse LinkedIn</a>
+
+    <div class="divider"></div>
+    <button id="logout-btn" class="btn btn-outline" style="color:#ef4444;border-color:#fecaca;font-size:11px">Disconnect</button>
   </div>
 
-  <div class="footer">
-    <a href="https://www.jobswiper.ai" target="_blank">jobswiper.ai</a>
-  </div>
-
+  <div class="footer"><a href="http://localhost:3001" target="_blank">jobswiper.ai</a></div>
   <script src="popup.js"></script>
 </body>
 </html>

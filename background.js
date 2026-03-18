@@ -3,8 +3,8 @@
  * Handles API calls to JobSwiper backend.
  */
 
-const API_BASE = 'https://www.jobswiper.ai'
-// const API_BASE = 'http://localhost:3001' // Dev
+// const API_BASE = 'https://www.jobswiper.ai' // Production
+const API_BASE = 'http://localhost:3001' // Dev
 
 // Listen for messages from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

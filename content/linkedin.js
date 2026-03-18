@@ -2,7 +2,8 @@
  * JobSwiper Content Script — LinkedIn
  */
 
-const API_BASE = 'https://www.jobswiper.ai'
+// const API_BASE = 'https://www.jobswiper.ai' // Production
+const API_BASE = 'http://localhost:3001' // Dev
 
 function extractJobData() {
   const data = {}
