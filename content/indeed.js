@@ -357,10 +357,21 @@ function injectButton() {
       body: JSON.stringify(jobData),
     }).then(r => r.json()).then(data => {
       const score = data.match_score
-      scoreBadge.textContent = score + '% match'
-      if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
-      else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
-      else { scoreBadge.style.background = '#f4f4f5'; scoreBadge.style.color = '#71717a' }
+
+      // If profile has < 3 skills, score is unreliable — show "complete profile" hint
+      if (data.profile_skills_count < 3) {
+        scoreBadge.textContent = '⚡ Complete profile'
+        scoreBadge.style.background = '#eff6ff'
+        scoreBadge.style.color = '#1e40af'
+        scoreBadge.style.cursor = 'pointer'
+        scoreBadge.title = 'Add skills to your profile for accurate match scores'
+        scoreBadge.addEventListener('click', () => window.open(API_BASE + '/dashboard/profile', '_blank'))
+      } else {
+        scoreBadge.textContent = score + '% match'
+        if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
+        else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
+        else { scoreBadge.style.background = '#f4f4f5'; scoreBadge.style.color = '#71717a' }
+      }
 
       if (data.already_saved) {
         btn.className = 'jobswiper-save-btn saved'
