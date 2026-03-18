@@ -395,7 +395,7 @@ async function _doInjectBadges() {
   const cards = document.querySelectorAll('.job_seen_beacon, .resultContent, [data-jk]')
   if (cards.length === 0) return
 
-  // Collect cards that need badges
+  // Collect cards that need badges — extract title + company + snippet
   const pending = []
   for (const card of cards) {
     if (card.querySelector('.jobswiper-badge')) continue
@@ -404,12 +404,15 @@ async function _doInjectBadges() {
     const titleEl = card.querySelector('h2.jobTitle') || card.querySelector('h2')
     if (!titleEl) continue
 
+    const company = (card.querySelector('[data-testid="company-name"]') || card.querySelector('.companyName') || card.querySelector('.company_location .companyName'))?.textContent?.trim() || ''
+    const location = (card.querySelector('[data-testid="text-location"]') || card.querySelector('.companyLocation'))?.textContent?.trim() || ''
+    const snippet = (card.querySelector('.job-snippet') || card.querySelector('[class*="job-snippet"]') || card.querySelector('table.jobCardShelfContainer'))?.textContent?.trim() || ''
+
     const badge = document.createElement('span')
     badge.className = 'jobswiper-badge'
     badge.textContent = '...'
-    badge.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:600;background:#f4f4f5;color:#71717a;margin-left:6px;vertical-align:middle;'
     titleEl.appendChild(badge)
-    pending.push({ title, badge })
+    pending.push({ title, company, location, snippet, badge })
   }
 
   if (pending.length === 0) return
@@ -418,12 +421,12 @@ async function _doInjectBadges() {
   // Process max 5 at a time to avoid flooding
   for (let i = 0; i < pending.length; i += 5) {
     const batch = pending.slice(i, i + 5)
-    await Promise.all(batch.map(async ({ title, badge }) => {
+    await Promise.all(batch.map(async ({ title, company, location, snippet, badge }) => {
       try {
         const res = await fetch(`${API_BASE}/api/extension/analyze-job`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ title, company: '', url: '' }),
+          body: JSON.stringify({ title, company, location, description: snippet, url: '' }),
         })
         if (res.ok) {
           const data = await res.json()
