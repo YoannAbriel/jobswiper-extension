@@ -303,13 +303,27 @@ function injectButton() {
     document.body.appendChild(btn)
   }
 
-  // Auto-show analysis panel
-  showAnalysisPanel()
+  // Auto-show analysis panel (only if not already showing)
+  if (!document.querySelector('.jobswiper-panel')) {
+    showAnalysisPanel()
+  }
 }
+
+// Track current URL to detect SPA navigation
+let lastUrl = window.location.href
 
 // Run on page load + SPA navigation
 injectButton()
 const observer = new MutationObserver(() => {
+  const currentUrl = window.location.href
+  if (currentUrl !== lastUrl) {
+    // URL changed — Indeed SPA navigation
+    lastUrl = currentUrl
+    document.querySelector('.jobswiper-save-btn')?.closest('div')?.remove()
+    document.querySelector('.jobswiper-panel')?.remove()
+    setTimeout(injectButton, 500) // Wait for new content
+    return
+  }
   if (!document.querySelector('.jobswiper-save-btn')) injectButton()
 })
 observer.observe(document.body, { childList: true, subtree: true })
