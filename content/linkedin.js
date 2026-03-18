@@ -31,9 +31,9 @@ function extractJobData() {
   ).trim()
 
   data.description = (
-    document.querySelector('.jobs-description-content__text')?.innerHTML ||
-    document.querySelector('.jobs-box__html-content')?.innerHTML ||
-    document.querySelector('#job-details')?.innerHTML ||
+    document.querySelector('.jobs-description-content__text')?.innerText ||
+    document.querySelector('.jobs-box__html-content')?.innerText ||
+    document.querySelector('#job-details')?.innerText ||
     ''
   ).trim()
 

@@ -37,9 +37,10 @@ function extractJobData() {
     document.querySelector('.companyLocation')?.textContent || ''
   ).trim()
 
+  // Use innerText (preserves line breaks) not innerHTML (raw HTML tags)
   data.description = (
-    document.querySelector('#jobDescriptionText')?.innerHTML ||
-    document.querySelector('.jobsearch-JobComponent-description')?.innerHTML || ''
+    document.querySelector('#jobDescriptionText')?.innerText ||
+    document.querySelector('.jobsearch-JobComponent-description')?.innerText || ''
   ).trim()
 
   data.salary_range = (
