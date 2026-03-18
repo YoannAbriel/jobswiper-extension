@@ -4,9 +4,24 @@ el.id = 'jobswiper-extension-installed'
 el.style.display = 'none'
 document.documentElement.appendChild(el)
 
-// Also respond to postMessage ping
+// Respond to postMessage pings
 window.addEventListener('message', (event) => {
+  // Detection ping
   if (event.data?.type === 'JOBSWIPER_EXTENSION_PING') {
     window.postMessage({ type: 'JOBSWIPER_EXTENSION_PONG' }, '*')
+  }
+
+  // Auth token transfer: app sends token to extension after login
+  if (event.data?.type === 'JOBSWIPER_SET_TOKEN' && event.data.token) {
+    chrome.storage.local.set({ token: event.data.token }, () => {
+      window.postMessage({ type: 'JOBSWIPER_TOKEN_SAVED' }, '*')
+    })
+  }
+
+  // Auth token request: app asks extension for current token
+  if (event.data?.type === 'JOBSWIPER_GET_TOKEN') {
+    chrome.storage.local.get('token', ({ token }) => {
+      window.postMessage({ type: 'JOBSWIPER_TOKEN_RESULT', token: token || null }, '*')
+    })
   }
 })
