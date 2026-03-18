@@ -443,22 +443,33 @@ async function _doInjectBadges() {
   badgesProcessing = false
 }
 
-// Track current URL to detect SPA navigation
+// Track URL + job title to detect navigation (Indeed loads jobs in side panel without URL change)
 let lastUrl = window.location.href
+let lastJobTitle = ''
 
 // Run on page load + SPA navigation
 injectButton()
 injectSearchBadges()
 const observer = new MutationObserver(() => {
   const currentUrl = window.location.href
-  if (currentUrl !== lastUrl) {
-    // URL changed — Indeed SPA navigation
+  const currentTitle = (
+    document.querySelector('h1.jobsearch-JobInfoHeader-title')?.textContent ||
+    document.querySelector('h2.jobTitle span')?.textContent ||
+    document.querySelector('[data-testid="jobsearch-JobInfoHeader-title"]')?.textContent || ''
+  ).trim()
+
+  // Detect navigation: URL changed OR job title changed (side panel click)
+  if (currentUrl !== lastUrl || (currentTitle && currentTitle !== lastJobTitle)) {
     lastUrl = currentUrl
+    if (currentTitle) lastJobTitle = currentTitle
+    // Remove ALL injected elements — re-create with fresh data
     document.querySelector('.jobswiper-save-btn')?.closest('div')?.remove()
     document.querySelector('.jobswiper-panel')?.remove()
-    setTimeout(() => { injectButton(); injectSearchBadges() }, 500)
+    document.querySelectorAll('.jobswiper-inline-score').forEach(el => el.remove())
+    setTimeout(() => { injectButton(); injectSearchBadges() }, 300)
     return
   }
+
   if (!document.querySelector('.jobswiper-save-btn')) injectButton()
   injectSearchBadges()
 })
