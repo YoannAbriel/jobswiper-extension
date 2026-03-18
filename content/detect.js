@@ -18,6 +18,11 @@ window.addEventListener('message', (event) => {
     })
   }
 
+  // Profile data sync: app sends profile for autofill
+  if (event.data?.type === 'JOBSWIPER_SET_PROFILE' && event.data.profile) {
+    chrome.storage.local.set({ userProfile: event.data.profile })
+  }
+
   // Auth token request: app asks extension for current token
   if (event.data?.type === 'JOBSWIPER_GET_TOKEN') {
     chrome.storage.local.get('token', ({ token }) => {

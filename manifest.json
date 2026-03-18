@@ -34,7 +34,9 @@
     "https://*.workable.com/*",
     "https://*.breezy.hr/*",
     "https://*.ashbyhq.com/*",
-    "https://*.recruitee.com/*"
+    "https://*.recruitee.com/*",
+    "https://*.bamboohr.com/*",
+    "https://*.jazz.co/*"
   ],
   "background": {
     "service_worker": "background.js"

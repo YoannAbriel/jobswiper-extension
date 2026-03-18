@@ -287,13 +287,12 @@ async function showAnalysisPanel() {
       })
     })
 
-    // Profile tip
+    // Profile tip (use DOM methods to avoid destroying star event listeners)
     if (data.profile_skills_count === 0) {
-      body.innerHTML += `
-        <div style="font-size:11px;color:#71717a;text-align:center;padding:8px;background:#f4f4f5;border-radius:8px">
-          💡 Add skills to your <a href="${API_BASE}/dashboard/profile" target="_blank" style="color:#1e3a5f;font-weight:600">profile</a> for better match scores
-        </div>
-      `
+      const tip = document.createElement('div')
+      tip.style.cssText = 'font-size:11px;color:#71717a;text-align:center;padding:8px;background:#f4f4f5;border-radius:8px'
+      tip.innerHTML = `💡 Add skills to your <a href="${API_BASE}/dashboard/profile" target="_blank" style="color:#1e3a5f;font-weight:600">profile</a> for better match scores`
+      body.appendChild(tip)
     }
 
   } catch (err) {
@@ -348,8 +347,17 @@ function injectButton() {
 // Search results: inject mini badges on each job card
 // ============================================================================
 
+let badgeDebounce = null
+let badgesProcessing = false
+
 async function injectSearchBadges() {
-  // Only on search results pages
+  // Debounce — only run once per 2 seconds
+  if (badgeDebounce) clearTimeout(badgeDebounce)
+  badgeDebounce = setTimeout(_doInjectBadges, 2000)
+}
+
+async function _doInjectBadges() {
+  if (badgesProcessing) return
   if (window.location.pathname.includes('/viewjob')) return
 
   const { token } = await chrome.storage.local.get('token')
@@ -358,44 +366,52 @@ async function injectSearchBadges() {
   const cards = document.querySelectorAll('.job_seen_beacon, .resultContent, [data-jk]')
   if (cards.length === 0) return
 
+  // Collect cards that need badges
+  const pending = []
   for (const card of cards) {
     if (card.querySelector('.jobswiper-badge')) continue
-
     const title = (card.querySelector('h2.jobTitle span') || card.querySelector('h2 a span'))?.textContent?.trim()
     if (!title) continue
+    const titleEl = card.querySelector('h2.jobTitle') || card.querySelector('h2')
+    if (!titleEl) continue
 
-    // Create mini badge
     const badge = document.createElement('span')
     badge.className = 'jobswiper-badge'
     badge.textContent = '...'
     badge.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:600;background:#f4f4f5;color:#71717a;margin-left:6px;vertical-align:middle;'
-
-    const titleEl = card.querySelector('h2.jobTitle') || card.querySelector('h2')
-    if (titleEl) titleEl.appendChild(badge)
-
-    // Quick analyze (just title, no description — fast)
-    try {
-      const res = await fetch(`${API_BASE}/api/extension/analyze-job`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ title, company: '', url: '' }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        const score = data.match_score
-        if (score >= 80) {
-          badge.style.background = '#d1fae5'; badge.style.color = '#065f46'
-        } else if (score >= 60) {
-          badge.style.background = '#fef3c7'; badge.style.color = '#92400e'
-        }
-        badge.textContent = score + '%'
-        if (data.already_saved) {
-          badge.textContent = '✓ ' + score + '%'
-          badge.style.background = '#dbeafe'; badge.style.color = '#1e40af'
-        }
-      }
-    } catch { badge.remove() }
+    titleEl.appendChild(badge)
+    pending.push({ title, badge })
   }
+
+  if (pending.length === 0) return
+  badgesProcessing = true
+
+  // Process max 5 at a time to avoid flooding
+  for (let i = 0; i < pending.length; i += 5) {
+    const batch = pending.slice(i, i + 5)
+    await Promise.all(batch.map(async ({ title, badge }) => {
+      try {
+        const res = await fetch(`${API_BASE}/api/extension/analyze-job`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ title, company: '', url: '' }),
+        })
+        if (res.ok) {
+          const data = await res.json()
+          const score = data.match_score
+          if (score >= 80) { badge.style.background = '#d1fae5'; badge.style.color = '#065f46' }
+          else if (score >= 60) { badge.style.background = '#fef3c7'; badge.style.color = '#92400e' }
+          badge.textContent = score + '%'
+          if (data.already_saved) {
+            badge.textContent = '✓ ' + score + '%'
+            badge.style.background = '#dbeafe'; badge.style.color = '#1e40af'
+          }
+        }
+      } catch { badge.remove() }
+    }))
+  }
+
+  badgesProcessing = false
 }
 
 // Track current URL to detect SPA navigation

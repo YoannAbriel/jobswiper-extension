@@ -6,7 +6,8 @@
  */
 
 // const API_BASE = 'https://www.jobswiper.ai'
-const API_BASE_AF = 'http://localhost:3001'
+// const API_BASE = 'https://www.jobswiper.ai' // Production
+const API_BASE = 'http://localhost:3001' // Dev
 
 // Field mappings: common label patterns → profile field
 const FIELD_MAP = [
@@ -38,7 +39,7 @@ async function loadProfile() {
 
   // Fetch from API (reuse stats endpoint which has profile data)
   try {
-    const res = await fetch(`${API_BASE_AF}/api/extension/stats`, {
+    const res = await fetch(`${API_BASE}/api/extension/stats`, {
       headers: { 'Authorization': `Bearer ${token}` },
     })
     if (!res.ok) return null
