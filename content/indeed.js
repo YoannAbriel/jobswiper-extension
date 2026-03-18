@@ -252,6 +252,41 @@ async function showAnalysisPanel() {
       body.innerHTML += `<div class="jobswiper-summary">${data.summary}</div>`
     }
 
+    // Notes + rating section
+    body.innerHTML += `
+      <div class="jobswiper-section">
+        <div class="jobswiper-section-title">Your notes</div>
+        <div style="display:flex;gap:2px;margin-bottom:6px" class="jobswiper-stars">
+          ${[1,2,3,4,5].map(n => `<button data-star="${n}" style="background:none;border:none;cursor:pointer;font-size:18px;padding:0;color:#d1d5db">☆</button>`).join('')}
+        </div>
+        <textarea class="jobswiper-notes" placeholder="Add a note about this job..." style="width:100%;min-height:48px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:inherit;resize:vertical;outline:none;"></textarea>
+      </div>
+    `
+
+    // Star rating logic
+    let selectedRating = 0
+    const stars = body.querySelectorAll('.jobswiper-stars button')
+    stars.forEach(star => {
+      star.addEventListener('click', () => {
+        selectedRating = parseInt(star.dataset.star)
+        stars.forEach((s, i) => {
+          s.textContent = i < selectedRating ? '★' : '☆'
+          s.style.color = i < selectedRating ? '#f59e0b' : '#d1d5db'
+        })
+      })
+      star.addEventListener('mouseenter', () => {
+        const val = parseInt(star.dataset.star)
+        stars.forEach((s, i) => {
+          s.style.color = i < val ? '#f59e0b' : '#d1d5db'
+        })
+      })
+      star.addEventListener('mouseleave', () => {
+        stars.forEach((s, i) => {
+          s.style.color = i < selectedRating ? '#f59e0b' : '#d1d5db'
+        })
+      })
+    })
+
     // Profile tip
     if (data.profile_skills_count === 0) {
       body.innerHTML += `
@@ -309,11 +344,66 @@ function injectButton() {
   }
 }
 
+// ============================================================================
+// Search results: inject mini badges on each job card
+// ============================================================================
+
+async function injectSearchBadges() {
+  // Only on search results pages
+  if (window.location.pathname.includes('/viewjob')) return
+
+  const { token } = await chrome.storage.local.get('token')
+  if (!token) return
+
+  const cards = document.querySelectorAll('.job_seen_beacon, .resultContent, [data-jk]')
+  if (cards.length === 0) return
+
+  for (const card of cards) {
+    if (card.querySelector('.jobswiper-badge')) continue
+
+    const title = (card.querySelector('h2.jobTitle span') || card.querySelector('h2 a span'))?.textContent?.trim()
+    if (!title) continue
+
+    // Create mini badge
+    const badge = document.createElement('span')
+    badge.className = 'jobswiper-badge'
+    badge.textContent = '...'
+    badge.style.cssText = 'display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:600;background:#f4f4f5;color:#71717a;margin-left:6px;vertical-align:middle;'
+
+    const titleEl = card.querySelector('h2.jobTitle') || card.querySelector('h2')
+    if (titleEl) titleEl.appendChild(badge)
+
+    // Quick analyze (just title, no description — fast)
+    try {
+      const res = await fetch(`${API_BASE}/api/extension/analyze-job`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ title, company: '', url: '' }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const score = data.match_score
+        if (score >= 80) {
+          badge.style.background = '#d1fae5'; badge.style.color = '#065f46'
+        } else if (score >= 60) {
+          badge.style.background = '#fef3c7'; badge.style.color = '#92400e'
+        }
+        badge.textContent = score + '%'
+        if (data.already_saved) {
+          badge.textContent = '✓ ' + score + '%'
+          badge.style.background = '#dbeafe'; badge.style.color = '#1e40af'
+        }
+      }
+    } catch { badge.remove() }
+  }
+}
+
 // Track current URL to detect SPA navigation
 let lastUrl = window.location.href
 
 // Run on page load + SPA navigation
 injectButton()
+injectSearchBadges()
 const observer = new MutationObserver(() => {
   const currentUrl = window.location.href
   if (currentUrl !== lastUrl) {
@@ -321,9 +411,10 @@ const observer = new MutationObserver(() => {
     lastUrl = currentUrl
     document.querySelector('.jobswiper-save-btn')?.closest('div')?.remove()
     document.querySelector('.jobswiper-panel')?.remove()
-    setTimeout(injectButton, 500) // Wait for new content
+    setTimeout(() => { injectButton(); injectSearchBadges() }, 500)
     return
   }
   if (!document.querySelector('.jobswiper-save-btn')) injectButton()
+  injectSearchBadges()
 })
 observer.observe(document.body, { childList: true, subtree: true })

@@ -5,7 +5,9 @@
   "description": "Save jobs from any website. Generate tailored CVs, cover letters & interview prep with AI.",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "https://*.indeed.com/*",
@@ -22,7 +24,17 @@
     "https://jobswiper.ai/*",
     "https://www.jobswiper.ai/*",
     "http://localhost:3001/*",
-    "http://localhost:3000/*"
+    "http://localhost:3000/*",
+    "https://*.greenhouse.io/*",
+    "https://*.lever.co/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.icims.com/*",
+    "https://*.smartrecruiters.com/*",
+    "https://*.taleo.net/*",
+    "https://*.workable.com/*",
+    "https://*.breezy.hr/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.recruitee.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -59,6 +71,25 @@
       ],
       "js": ["content/detect.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://*.greenhouse.io/*",
+        "https://*.lever.co/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.icims.com/*",
+        "https://*.smartrecruiters.com/*",
+        "https://*.taleo.net/*",
+        "https://*.workable.com/*",
+        "https://*.breezy.hr/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.recruitee.com/*",
+        "https://*.bamboohr.com/*",
+        "https://*.jazz.co/*"
+      ],
+      "js": ["content/autofill.js"],
+      "css": ["content/jobswiper.css"],
+      "run_at": "document_idle"
     }
   ],
   "action": {
