@@ -1,0 +1,77 @@
+{
+  "manifest_version": 3,
+  "name": "JobSwiper — AI Job Prep",
+  "version": "0.1.0",
+  "description": "Save jobs from any website. Generate tailored CVs, cover letters & interview prep with AI.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*.indeed.com/*",
+    "https://*.indeed.fr/*",
+    "https://*.indeed.de/*",
+    "https://*.indeed.co.uk/*",
+    "https://*.indeed.co.in/*",
+    "https://*.indeed.ca/*",
+    "https://*.indeed.com.au/*",
+    "https://*.linkedin.com/*",
+    "https://*.glassdoor.com/*",
+    "https://*.glassdoor.fr/*",
+    "https://*.glassdoor.de/*",
+    "https://jobswiper.ai/*",
+    "https://www.jobswiper.ai/*",
+    "http://localhost:3001/*",
+    "http://localhost:3000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.indeed.com/*",
+        "https://*.indeed.fr/*",
+        "https://*.indeed.de/*",
+        "https://*.indeed.co.uk/*",
+        "https://*.indeed.co.in/*",
+        "https://*.indeed.ca/*",
+        "https://*.indeed.com.au/*"
+      ],
+      "js": ["content/indeed.js"],
+      "css": ["content/jobswiper.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.linkedin.com/jobs/*"
+      ],
+      "js": ["content/linkedin.js"],
+      "css": ["content/jobswiper.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://jobswiper.ai/*",
+        "https://www.jobswiper.ai/*",
+        "http://localhost:3001/*",
+        "http://localhost:3000/*"
+      ],
+      "js": ["content/detect.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

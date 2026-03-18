@@ -1,0 +1,80 @@
+/* JobSwiper save button — injected on job boards */
+.jobswiper-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: none;
+  background: #1e3a5f;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(30, 58, 95, 0.25);
+  z-index: 9999;
+}
+
+.jobswiper-save-btn:hover {
+  background: #15304f;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(30, 58, 95, 0.35);
+}
+
+.jobswiper-save-btn.saved {
+  background: #059669;
+  cursor: default;
+}
+
+.jobswiper-save-btn.saved:hover {
+  transform: none;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25);
+}
+
+.jobswiper-save-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.jobswiper-save-btn .spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: jobswiper-spin 0.6s linear infinite;
+}
+
+@keyframes jobswiper-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Toast notification */
+.jobswiper-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: #1e3a5f;
+  color: white;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 99999;
+  animation: jobswiper-slide-in 0.3s ease;
+}
+
+.jobswiper-toast a {
+  color: #93c5fd;
+  text-decoration: underline;
+  margin-left: 8px;
+}
+
+@keyframes jobswiper-slide-in {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
