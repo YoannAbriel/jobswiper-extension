@@ -443,34 +443,46 @@ async function _doInjectBadges() {
   badgesProcessing = false
 }
 
-// Track URL + job title to detect navigation (Indeed loads jobs in side panel without URL change)
-let lastUrl = window.location.href
-let lastJobTitle = ''
+// Track which job we've injected for
+let injectedForTitle = ''
 
-// Run on page load + SPA navigation
+function getCurrentJobTitle() {
+  return (
+    document.querySelector('h1.jobsearch-JobInfoHeader-title')?.textContent ||
+    document.querySelector('[data-testid="jobsearch-JobInfoHeader-title"]')?.textContent ||
+    document.querySelector('h2.jobTitle span')?.textContent || ''
+  ).trim()
+}
+
+function clearInjected() {
+  document.querySelector('.jobswiper-save-btn')?.closest('div')?.remove()
+  document.querySelector('.jobswiper-panel')?.remove()
+  document.querySelectorAll('.jobswiper-inline-score').forEach(el => el.remove())
+  injectedForTitle = ''
+}
+
+// Run on page load
 injectButton()
 injectSearchBadges()
-const observer = new MutationObserver(() => {
-  const currentUrl = window.location.href
-  const currentTitle = (
-    document.querySelector('h1.jobsearch-JobInfoHeader-title')?.textContent ||
-    document.querySelector('h2.jobTitle span')?.textContent ||
-    document.querySelector('[data-testid="jobsearch-JobInfoHeader-title"]')?.textContent || ''
-  ).trim()
+injectedForTitle = getCurrentJobTitle()
 
-  // Detect navigation: URL changed OR job title changed (side panel click)
-  if (currentUrl !== lastUrl || (currentTitle && currentTitle !== lastJobTitle)) {
-    lastUrl = currentUrl
-    if (currentTitle) lastJobTitle = currentTitle
-    // Remove ALL injected elements — re-create with fresh data
-    document.querySelector('.jobswiper-save-btn')?.closest('div')?.remove()
-    document.querySelector('.jobswiper-panel')?.remove()
-    document.querySelectorAll('.jobswiper-inline-score').forEach(el => el.remove())
-    setTimeout(() => { injectButton(); injectSearchBadges() }, 300)
-    return
+// Poll every 500ms to detect job changes (more reliable than MutationObserver for Indeed's SPA)
+setInterval(() => {
+  const currentTitle = getCurrentJobTitle()
+
+  if (currentTitle && currentTitle !== injectedForTitle) {
+    clearInjected()
+    setTimeout(() => {
+      injectButton()
+      injectedForTitle = getCurrentJobTitle()
+    }, 200)
   }
 
-  if (!document.querySelector('.jobswiper-save-btn')) injectButton()
+  // Re-inject if button was removed by Indeed's DOM updates
+  if (currentTitle && !document.querySelector('.jobswiper-save-btn')) {
+    injectButton()
+    injectedForTitle = getCurrentJobTitle()
+  }
+
   injectSearchBadges()
-})
-observer.observe(document.body, { childList: true, subtree: true })
+}, 500)
