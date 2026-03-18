@@ -369,10 +369,7 @@ function injectButton() {
     }).catch(() => scoreBadge.remove())
   })
 
-  // Auto-show analysis panel (only if not already showing)
-  if (!document.querySelector('.jobswiper-panel')) {
-    showAnalysisPanel()
-  }
+  // Don't auto-show analysis panel — score is inline next to the button
 }
 
 // ============================================================================
