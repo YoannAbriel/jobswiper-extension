@@ -328,15 +328,46 @@ function injectButton() {
     document.querySelector('#job_header') ||
     document.querySelector('h1')?.parentElement
 
+  // Score badge next to button
+  const scoreBadge = document.createElement('span')
+  scoreBadge.className = 'jobswiper-inline-score'
+  scoreBadge.style.cssText = 'display:inline-flex;align-items:center;padding:5px 10px;border-radius:8px;font-size:12px;font-weight:700;background:#f4f4f5;color:#71717a;font-family:-apple-system,BlinkMacSystemFont,sans-serif;'
+  scoreBadge.textContent = '...'
+
   if (actionBar) {
     const wrapper = document.createElement('div')
     wrapper.style.cssText = 'margin: 12px 0; display: flex; gap: 8px; align-items: center;'
     wrapper.appendChild(btn)
+    wrapper.appendChild(scoreBadge)
     actionBar.after(wrapper)
   } else {
     btn.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 99999;'
     document.body.appendChild(btn)
+    scoreBadge.style.cssText += 'position:fixed;bottom:24px;right:220px;z-index:99999;'
+    document.body.appendChild(scoreBadge)
   }
+
+  // Fetch score for inline badge
+  chrome.storage.local.get('token', ({ token }) => {
+    if (!token) { scoreBadge.remove(); return }
+    const jobData = extractJobData()
+    fetch(`${API_BASE}/api/extension/analyze-job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(jobData),
+    }).then(r => r.json()).then(data => {
+      const score = data.match_score
+      scoreBadge.textContent = score + '% match'
+      if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
+      else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
+      else { scoreBadge.style.background = '#f4f4f5'; scoreBadge.style.color = '#71717a' }
+
+      if (data.already_saved) {
+        btn.className = 'jobswiper-save-btn saved'
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.285 2l-11.285 11.567-5.286-5.011-3.714 3.716 9 8.728 15-15.285z"/></svg> Saved`
+      }
+    }).catch(() => scoreBadge.remove())
+  })
 
   // Auto-show analysis panel (only if not already showing)
   if (!document.querySelector('.jobswiper-panel')) {
