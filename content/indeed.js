@@ -132,21 +132,17 @@ async function handleSave(btn, retryCount = 0) {
       return
     }
 
-    const res = await fetch(`${API_BASE}/api/extension/import-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(jobData),
-    })
-    const response = await res.json()
+    // Use background worker for cross-origin requests (Manifest V3 requirement)
+    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
 
-    if (res.ok && response.success) {
+    if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.285 2l-11.285 11.567-5.286-5.011-3.714 3.716 9 8.728 15-15.285z"/></svg> Saved!`
       showToast('✅ Job saved to JobSwiper!', API_BASE + '/dashboard/jobs')
       return
     }
 
-    if (res.status === 401 && retryCount < 2) {
+    if (response && response.error && response.error.includes('Authentication') && retryCount < 2) {
       // Token expired — try to get a fresh one and retry
       await chrome.storage.local.remove('token')
       try {
@@ -163,13 +159,13 @@ async function handleSave(btn, retryCount = 0) {
     }
 
     // Other error — retry once
-    if (retryCount < 1) {
-      console.log('[JobSwiper] Save failed, retrying...', response.error)
+    if (response && !response.success && retryCount < 1) {
+      console.log('[JobSwiper] Save failed, retrying...', response?.error)
       await new Promise(r => setTimeout(r, 1000))
       return handleSave(btn, retryCount + 1)
     }
 
-    btn.textContent = '❌ ' + (response.error || 'Save failed')
+    btn.textContent = '❌ ' + (response?.error || 'Save failed')
     setTimeout(() => resetButton(btn), 2000)
   } catch (err) {
     // Network error — retry once
@@ -179,8 +175,9 @@ async function handleSave(btn, retryCount = 0) {
       return handleSave(btn, retryCount + 1)
     }
     console.error('[JobSwiper] Save error:', err)
-    btn.textContent = '❌ Connection error'
-    setTimeout(() => resetButton(btn), 2000)
+    btn.textContent = '❌ ' + (err.message || 'Connection error')
+    showToast('Error: ' + (err.message || 'Could not connect to JobSwiper'))
+    setTimeout(() => resetButton(btn), 3000)
   }
 }
 
