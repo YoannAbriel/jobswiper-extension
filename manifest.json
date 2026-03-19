@@ -7,7 +7,9 @@
     "activeTab",
     "storage",
     "alarms",
-    "notifications"
+    "notifications",
+    "tabs",
+    "scripting"
   ],
   "host_permissions": [
     "https://*.indeed.com/*",

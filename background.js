@@ -6,8 +6,65 @@
 // const API_BASE = 'https://www.jobswiper.ai' // Production
 const API_BASE = 'http://localhost:3000' // Dev
 
+// ── Auto-connect: find open JobSwiper tab and grab token ──
+
+async function autoConnect() {
+  const { token } = await chrome.storage.local.get('token')
+  if (token) return // Already connected
+
+  const tabs = await chrome.tabs.query({
+    url: [
+      'https://jobswiper.ai/*',
+      'https://www.jobswiper.ai/*',
+      'http://localhost:3000/*',
+      'http://localhost:3001/*',
+    ]
+  })
+
+  for (const tab of tabs) {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          // Supabase stores auth as sb-<ref>-auth-token in localStorage
+          for (const key of Object.keys(localStorage)) {
+            if (key.includes('auth-token') && key.includes('sb-')) {
+              try {
+                const data = JSON.parse(localStorage.getItem(key))
+                return data?.access_token || null
+              } catch { return null }
+            }
+          }
+          return null
+        },
+      })
+
+      const accessToken = results?.[0]?.result
+      if (accessToken) {
+        await chrome.storage.local.set({ token: accessToken })
+        console.log('[JobSwiper] Auto-connected via open tab')
+        return
+      }
+    } catch {}
+  }
+}
+
+// Run on install + service worker wake
+autoConnect()
+chrome.runtime.onInstalled.addListener(() => autoConnect())
+
+// Also try when popup asks to connect
 // Listen for messages from content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'AUTO_CONNECT') {
+    autoConnect().then(() => {
+      chrome.storage.local.get('token', ({ token }) => {
+        sendResponse({ success: !!token, token })
+      })
+    })
+    return true
+  }
+
   if (message.type === 'SAVE_JOB') {
     saveJob(message.data, message.token)
       .then(result => {

@@ -11,10 +11,18 @@
 const API_BASE = 'http://localhost:3000'
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const { token } = await chrome.storage.local.get('token')
+  // First: try auto-connect (scan open tabs for JobSwiper)
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+    if (result?.success && result.token) {
+      showLoggedIn(result.token)
+      return
+    }
+  } catch {}
 
+  // Check stored token
+  const { token } = await chrome.storage.local.get('token')
   if (token) {
-    // Verify token still works
     try {
       const res = await fetch(`${API_BASE}/api/extension/stats`, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -38,18 +46,27 @@ function showLoggedOut() {
   document.body.classList.add('logged-out')
 }
 
-// Connect button — fetches token from app via cookies
+// Connect button — tries auto-connect (tab scan) then cookie fallback
 document.getElementById('connect-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('connect-btn')
   const origText = btn.textContent
   btn.textContent = 'Connecting...'
   btn.disabled = true
 
+  // Try 1: auto-connect via open tab (reads localStorage)
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+    if (result?.success && result.token) {
+      showLoggedIn(result.token)
+      return
+    }
+  } catch {}
+
+  // Try 2: cookie-based auth endpoint
   try {
     const res = await fetch(`${API_BASE}/api/extension/auth`, {
       credentials: 'include',
     })
-
     if (res.ok) {
       const data = await res.json()
       if (data.token) {
@@ -58,13 +75,10 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
         return
       }
     }
+  } catch {}
 
-    btn.textContent = 'Not logged in — open app first'
-    setTimeout(() => { btn.textContent = origText; btn.disabled = false }, 3000)
-  } catch {
-    btn.textContent = 'Connection failed'
-    setTimeout(() => { btn.textContent = origText; btn.disabled = false }, 2000)
-  }
+  btn.textContent = 'Open JobSwiper & log in first'
+  setTimeout(() => { btn.textContent = origText; btn.disabled = false }, 3000)
 })
 
 // Logout
