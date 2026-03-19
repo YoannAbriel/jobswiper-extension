@@ -102,7 +102,7 @@ function showToast(msg, link) {
   setTimeout(() => toast.remove(), 4000)
 }
 
-async function handleSave(btn) {
+async function handleSave(btn, retryCount = 0) {
   btn.innerHTML = '<div class="spinner"></div> Saving...'
   btn.disabled = true
 
@@ -114,7 +114,17 @@ async function handleSave(btn) {
   }
 
   try {
-    const { token } = await chrome.storage.local.get('token')
+    let { token } = await chrome.storage.local.get('token')
+
+    // No token — try auto-connect before giving up
+    if (!token) {
+      try {
+        await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+        const result = await chrome.storage.local.get('token')
+        token = result.token
+      } catch {}
+    }
+
     if (!token) {
       btn.textContent = '🔒 Log in first'
       showToast('Please log in to JobSwiper first', API_BASE + '/login')
@@ -122,7 +132,6 @@ async function handleSave(btn) {
       return
     }
 
-    // Call API directly (more reliable than going through background worker)
     const res = await fetch(`${API_BASE}/api/extension/import-job`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -134,28 +143,41 @@ async function handleSave(btn) {
       btn.className = 'jobswiper-save-btn saved'
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M20.285 2l-11.285 11.567-5.286-5.011-3.714 3.716 9 8.728 15-15.285z"/></svg> Saved!`
       showToast('✅ Job saved to JobSwiper!', API_BASE + '/dashboard/jobs')
+      return
+    }
 
-      // Update overlay if present
-      const badge = document.querySelector('.jobswiper-already-saved')
-      if (!badge) {
-        const panel = document.querySelector('.jobswiper-panel-body')
-        if (panel) {
-          const saved = document.createElement('div')
-          saved.className = 'jobswiper-already-saved'
-          saved.textContent = '✓ Saved to your pipeline'
-          panel.prepend(saved)
-        }
-      }
-    } else if (res.status === 401) {
-      // Token expired — clear and ask to reconnect
+    if (res.status === 401 && retryCount < 2) {
+      // Token expired — try to get a fresh one and retry
       await chrome.storage.local.remove('token')
+      try {
+        await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+        const result = await chrome.storage.local.get('token')
+        if (result.token) {
+          // Retry with fresh token
+          return handleSave(btn, retryCount + 1)
+        }
+      } catch {}
       btn.textContent = '🔒 Reconnect in popup'
       setTimeout(() => resetButton(btn), 3000)
-    } else {
-      btn.textContent = '❌ ' + (response.error || 'Save failed')
-      setTimeout(() => resetButton(btn), 2000)
+      return
     }
+
+    // Other error — retry once
+    if (retryCount < 1) {
+      console.log('[JobSwiper] Save failed, retrying...', response.error)
+      await new Promise(r => setTimeout(r, 1000))
+      return handleSave(btn, retryCount + 1)
+    }
+
+    btn.textContent = '❌ ' + (response.error || 'Save failed')
+    setTimeout(() => resetButton(btn), 2000)
   } catch (err) {
+    // Network error — retry once
+    if (retryCount < 1) {
+      console.log('[JobSwiper] Network error, retrying...', err.message)
+      await new Promise(r => setTimeout(r, 1000))
+      return handleSave(btn, retryCount + 1)
+    }
     console.error('[JobSwiper] Save error:', err)
     btn.textContent = '❌ Connection error'
     setTimeout(() => resetButton(btn), 2000)
