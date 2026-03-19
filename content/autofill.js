@@ -7,7 +7,7 @@
 
 // const API_BASE = 'https://www.jobswiper.ai'
 // const API_BASE = 'https://www.jobswiper.ai' // Production
-const API_BASE = 'http://localhost:3001' // Dev
+const API_BASE = 'http://localhost:3000' // Dev
 
 // Field mappings: common label patterns → profile field
 const FIELD_MAP = [

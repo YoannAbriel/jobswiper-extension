@@ -23,7 +23,7 @@
     "https://*.glassdoor.de/*",
     "https://jobswiper.ai/*",
     "https://www.jobswiper.ai/*",
-    "http://localhost:3001/*",
+    "http://localhost:3000/*",
     "http://localhost:3000/*",
     "https://*.greenhouse.io/*",
     "https://*.lever.co/*",
@@ -68,7 +68,7 @@
       "matches": [
         "https://jobswiper.ai/*",
         "https://www.jobswiper.ai/*",
-        "http://localhost:3001/*",
+        "http://localhost:3000/*",
         "http://localhost:3000/*"
       ],
       "js": ["content/detect.js"],

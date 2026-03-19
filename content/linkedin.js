@@ -3,7 +3,7 @@
  */
 
 // const API_BASE = 'https://www.jobswiper.ai' // Production
-const API_BASE = 'http://localhost:3001' // Dev
+const API_BASE = 'http://localhost:3000' // Dev
 
 function extractJobData() {
   const data = {}

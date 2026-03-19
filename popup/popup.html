@@ -54,8 +54,12 @@
   <!-- Not logged in -->
   <div id="login-section" class="content">
     <div class="status warn"><div class="dot"></div>Not connected</div>
-    <a href="http://localhost:3001/login" target="_blank" class="btn btn-primary">Log in to JobSwiper</a>
-    <p style="font-size:10px;color:#9ca3af;text-align:center;margin-top:6px">Log in, then come back here</p>
+    <p style="font-size:12px;color:#4b5563;margin-bottom:10px;line-height:1.4">
+      <strong>Step 1:</strong> Log in on the app<br>
+      <strong>Step 2:</strong> Click Connect below
+    </p>
+    <a href="http://localhost:3000/login" target="_blank" class="btn btn-outline" style="margin-bottom:4px">Open JobSwiper</a>
+    <button id="connect-btn" class="btn btn-primary">Connect</button>
   </div>
 
   <!-- Logged in -->
@@ -82,7 +86,7 @@
 
     <div class="divider"></div>
 
-    <a href="http://localhost:3001/dashboard/jobs" target="_blank" class="btn btn-outline">My Saved Jobs</a>
+    <a href="http://localhost:3000/dashboard/jobs" target="_blank" class="btn btn-outline">My Saved Jobs</a>
     <a href="https://www.indeed.com" target="_blank" class="btn btn-outline">Browse Indeed</a>
     <a href="https://www.linkedin.com/jobs" target="_blank" class="btn btn-outline">Browse LinkedIn</a>
 
@@ -90,7 +94,7 @@
     <button id="logout-btn" class="btn btn-outline" style="color:#ef4444;border-color:#fecaca;font-size:11px">Disconnect</button>
   </div>
 
-  <div class="footer"><a href="http://localhost:3001" target="_blank">jobswiper.ai</a></div>
+  <div class="footer"><a href="http://localhost:3000" target="_blank">jobswiper.ai</a></div>
   <script src="popup.js"></script>
 </body>
 </html>
