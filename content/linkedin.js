@@ -5,6 +5,12 @@
 // const API_BASE = 'https://www.jobswiper.ai' // Production
 const API_BASE = 'http://localhost:3000' // Dev
 
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
 function extractJobData() {
   const data = {}
 
@@ -83,7 +89,7 @@ function showToast(msg, link) {
   setTimeout(() => toast.remove(), 4000)
 }
 
-async function handleSave(btn) {
+async function handleSave(btn, retryCount = 0) {
   btn.innerHTML = '<div class="spinner"></div> Saving...'
   btn.disabled = true
 
@@ -95,7 +101,17 @@ async function handleSave(btn) {
   }
 
   try {
-    const { token } = await chrome.storage.local.get('token')
+    let { token } = await chrome.storage.local.get('token')
+
+    // No token — try auto-connect before giving up
+    if (!token) {
+      try {
+        await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+        const result = await chrome.storage.local.get('token')
+        token = result.token
+      } catch {}
+    }
+
     if (!token) {
       btn.innerHTML = '🔒 Log in first'
       showToast('Log in to JobSwiper first', API_BASE + '/login')
@@ -105,17 +121,48 @@ async function handleSave(btn) {
 
     const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
 
-    if (response.success) {
+    if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.285 2l-11.285 11.567-5.286-5.011-3.714 3.716 9 8.728 15-15.285z"/></svg> Saved!`
       showToast('✅ Job saved!', API_BASE + '/dashboard/jobs')
-    } else {
-      btn.innerHTML = '❌ ' + (response.error || 'Failed')
-      setTimeout(() => resetButton(btn), 2000)
+      return
     }
-  } catch (err) {
-    btn.innerHTML = '❌ Error'
+
+    if (response && response.error && response.error.includes('Authentication') && retryCount < 2) {
+      // Token expired — try to get a fresh one and retry
+      await chrome.storage.local.remove('token')
+      try {
+        await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+        const result = await chrome.storage.local.get('token')
+        if (result.token) {
+          return handleSave(btn, retryCount + 1)
+        }
+      } catch {}
+      btn.innerHTML = '🔒 Reconnect in popup'
+      setTimeout(() => resetButton(btn), 3000)
+      return
+    }
+
+    // Other error — retry once
+    if (response && !response.success && retryCount < 1) {
+      console.log('[JobSwiper] Save failed, retrying...', response?.error)
+      await new Promise(r => setTimeout(r, 1000))
+      return handleSave(btn, retryCount + 1)
+    }
+
+    btn.innerHTML = '❌ ' + (response?.error || 'Failed')
     setTimeout(() => resetButton(btn), 2000)
+  } catch (err) {
+    // Network error — retry once
+    if (retryCount < 1) {
+      console.log('[JobSwiper] Network error, retrying...', err.message)
+      await new Promise(r => setTimeout(r, 1000))
+      return handleSave(btn, retryCount + 1)
+    }
+    console.error('[JobSwiper] Save error:', err)
+    btn.innerHTML = '❌ ' + (err.message || 'Error')
+    showToast('Error: ' + (err.message || 'Could not connect to JobSwiper'))
+    setTimeout(() => resetButton(btn), 3000)
   }
 }
 
@@ -153,7 +200,14 @@ function injectButton() {
 }
 
 injectButton()
-const observer = new MutationObserver(() => {
-  if (!document.querySelector('.jobswiper-save-btn')) injectButton()
+let _linkedinObserver = null
+if (_linkedinObserver) _linkedinObserver.disconnect()
+_linkedinObserver = new MutationObserver(() => {
+  try {
+    if (!document.querySelector('.jobswiper-save-btn')) injectButton()
+  } catch {
+    // Extension context invalidated — disconnect observer
+    _linkedinObserver?.disconnect()
+  }
 })
-observer.observe(document.body, { childList: true, subtree: true })
+_linkedinObserver.observe(document.body, { childList: true, subtree: true })

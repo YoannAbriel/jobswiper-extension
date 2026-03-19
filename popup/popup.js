@@ -10,6 +10,18 @@
 // const API_BASE = 'https://www.jobswiper.ai'
 const API_BASE = 'http://localhost:3000'
 
+function esc(str) {
+  const d = document.createElement('div')
+  d.textContent = str
+  return d.innerHTML
+}
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // First: try auto-connect (scan open tabs for JobSwiper)
   try {
@@ -24,9 +36,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const { token } = await chrome.storage.local.get('token')
   if (token) {
     try {
-      const res = await fetch(`${API_BASE}/api/extension/stats`, {
+      const res = await fetchWithTimeout(`${API_BASE}/api/extension/stats`, {
         headers: { 'Authorization': `Bearer ${token}` },
-      })
+      }, 8000)
       if (res.ok) { showLoggedIn(token); return }
     } catch {}
     await chrome.storage.local.remove('token')
@@ -64,9 +76,9 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
 
   // Try 2: cookie-based auth endpoint
   try {
-    const res = await fetch(`${API_BASE}/api/extension/auth`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/extension/auth`, {
       credentials: 'include',
-    })
+    }, 10000)
     if (res.ok) {
       const data = await res.json()
       if (data.token) {
@@ -93,9 +105,9 @@ async function loadStats(token) {
   if (!statsEl) return
 
   try {
-    const res = await fetch(`${API_BASE}/api/extension/stats`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/extension/stats`, {
       headers: { 'Authorization': `Bearer ${token}` },
-    })
+    }, 8000)
 
     if (!res.ok) {
       if (res.status === 401) { await chrome.storage.local.remove('token'); showLoggedOut() }
@@ -128,8 +140,8 @@ async function loadStats(token) {
     if (recentEl && data.recent_saves?.length > 0) {
       recentEl.innerHTML = data.recent_saves.map(s => `
         <div class="recent-item">
-          <div class="recent-title">${s.title}</div>
-          <div class="recent-company">${s.company}</div>
+          <div class="recent-title">${esc(s.title)}</div>
+          <div class="recent-company">${esc(s.company)}</div>
         </div>
       `).join('')
     } else if (recentEl) {

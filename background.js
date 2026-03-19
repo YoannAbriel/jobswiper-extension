@@ -6,6 +6,12 @@
 // const API_BASE = 'https://www.jobswiper.ai' // Production
 const API_BASE = 'http://localhost:3000' // Dev
 
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
 // ── Auto-connect: find open JobSwiper tab and grab token ──
 
 async function autoConnect() {
@@ -143,14 +149,14 @@ chrome.notifications.onClicked.addListener(() => {
 })
 
 async function saveJob(jobData, token) {
-  const response = await fetch(`${API_BASE}/api/extension/import-job`, {
+  const response = await fetchWithTimeout(`${API_BASE}/api/extension/import-job`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify(jobData),
-  })
+  }, 15000)
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Request failed' }))

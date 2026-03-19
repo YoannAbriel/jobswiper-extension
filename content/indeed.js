@@ -10,6 +10,18 @@
 // const API_BASE = 'https://www.jobswiper.ai' // Production
 const API_BASE = 'http://localhost:3000' // Dev
 
+function esc(str) {
+  const d = document.createElement('div')
+  d.textContent = str
+  return d.innerHTML
+}
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
 // ============================================================================
 // Job data extraction
 // ============================================================================
@@ -222,11 +234,11 @@ async function showAnalysisPanel() {
 
   // Call analyze API
   try {
-    const response = await fetch(`${API_BASE}/api/extension/analyze-job`, {
+    const response = await fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(jobData),
-    })
+    }, 10000)
 
     if (!response.ok) throw new Error('API error ' + response.status)
     const data = await response.json()
@@ -260,7 +272,7 @@ async function showAnalysisPanel() {
         <div class="jobswiper-section">
           <div class="jobswiper-section-title">✓ Your matching skills</div>
           <div class="jobswiper-skills">
-            ${data.matched_skills.map(s => `<span class="jobswiper-skill matched">${s}</span>`).join('')}
+            ${data.matched_skills.map(s => `<span class="jobswiper-skill matched">${esc(s)}</span>`).join('')}
           </div>
         </div>
       `
@@ -272,7 +284,7 @@ async function showAnalysisPanel() {
         <div class="jobswiper-section">
           <div class="jobswiper-section-title">⚠ Skills to highlight</div>
           <div class="jobswiper-skills">
-            ${data.missing_skills.map(s => `<span class="jobswiper-skill missing">${s}</span>`).join('')}
+            ${data.missing_skills.map(s => `<span class="jobswiper-skill missing">${esc(s)}</span>`).join('')}
           </div>
         </div>
       `
@@ -280,7 +292,7 @@ async function showAnalysisPanel() {
 
     // Summary
     if (data.summary) {
-      body.innerHTML += `<div class="jobswiper-summary">${data.summary}</div>`
+      body.innerHTML += `<div class="jobswiper-summary">${esc(data.summary)}</div>`
     }
 
     // Notes + rating section
@@ -381,12 +393,13 @@ function injectButton() {
   chrome.storage.local.get('token', ({ token }) => {
     if (!token) { scoreBadge.remove(); return }
     const jobData = extractJobData()
-    fetch(`${API_BASE}/api/extension/analyze-job`, {
+    fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify(jobData),
-    }).then(r => r.json()).then(data => {
+    }, 8000).then(r => r.json()).then(data => {
       const score = data.match_score
+      if (score == null) { scoreBadge.remove(); return }
 
       scoreBadge.textContent = score + '% match'
       if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
@@ -454,14 +467,15 @@ async function _doInjectBadges() {
     const batch = pending.slice(i, i + 5)
     await Promise.all(batch.map(async ({ title, company, location, snippet, badge }) => {
       try {
-        const res = await fetch(`${API_BASE}/api/extension/analyze-job`, {
+        const res = await fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify({ title, company, location, description: snippet, url: '' }),
-        })
+        }, 8000)
         if (res.ok) {
           const data = await res.json()
           const score = data.match_score
+          if (score == null) { badge.remove(); return }
           if (score >= 80) { badge.style.background = '#d1fae5'; badge.style.color = '#065f46' }
           else if (score >= 60) { badge.style.background = '#fef3c7'; badge.style.color = '#92400e' }
           badge.textContent = score + '%'
@@ -502,21 +516,25 @@ injectedForTitle = getCurrentJobTitle()
 
 // Poll every 500ms to detect job changes (more reliable than MutationObserver for Indeed's SPA)
 setInterval(() => {
-  const currentTitle = getCurrentJobTitle()
+  try {
+    const currentTitle = getCurrentJobTitle()
 
-  if (currentTitle && currentTitle !== injectedForTitle) {
-    clearInjected()
-    setTimeout(() => {
+    if (currentTitle && currentTitle !== injectedForTitle) {
+      clearInjected()
+      setTimeout(() => {
+        injectButton()
+        injectedForTitle = getCurrentJobTitle()
+      }, 200)
+    }
+
+    // Re-inject if button was removed by Indeed's DOM updates
+    if (currentTitle && !document.querySelector('.jobswiper-save-btn')) {
       injectButton()
       injectedForTitle = getCurrentJobTitle()
-    }, 200)
-  }
+    }
 
-  // Re-inject if button was removed by Indeed's DOM updates
-  if (currentTitle && !document.querySelector('.jobswiper-save-btn')) {
-    injectButton()
-    injectedForTitle = getCurrentJobTitle()
+    injectSearchBadges()
+  } catch {
+    // Extension context invalidated — stop polling
   }
-
-  injectSearchBadges()
 }, 500)

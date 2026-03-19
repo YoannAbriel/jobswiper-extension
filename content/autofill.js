@@ -9,6 +9,12 @@
 // const API_BASE = 'https://www.jobswiper.ai' // Production
 const API_BASE = 'http://localhost:3000' // Dev
 
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
 // Field mappings: common label patterns → profile field
 const FIELD_MAP = [
   { patterns: ['first name', 'prénom', 'vorname', 'nombre'], field: 'first_name' },
@@ -39,9 +45,13 @@ async function loadProfile() {
 
   // Fetch from API (reuse stats endpoint which has profile data)
   try {
-    const res = await fetch(`${API_BASE}/api/extension/stats`, {
+    const res = await fetchWithTimeout(`${API_BASE}/api/extension/stats`, {
       headers: { 'Authorization': `Bearer ${token}` },
-    })
+    }, 8000)
+    if (res.status === 401) {
+      chrome.storage.local.remove('token')
+      return null
+    }
     if (!res.ok) return null
     const stats = await res.json()
 
