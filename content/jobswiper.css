@@ -10,34 +10,32 @@
   border-radius: 2px;
 }
 
-/* Border beam — @property animated conic-gradient on border */
-@property --beam-angle {
-  syntax: '<angle>';
-  inherits: false;
-  initial-value: 0deg;
-}
-
+/* Border beam — GPU-accelerated rotating conic-gradient */
 .jobswiper-save-btn {
   position: relative;
+  overflow: hidden;
 }
 
+/* Outer ring: clips the spinning gradient to the border area */
 .jobswiper-save-btn::before {
   content: '';
   position: absolute;
   inset: -2px;
   border-radius: inherit;
   padding: 2px;
-  background: conic-gradient(from var(--beam-angle), transparent 0%, #60a5fa 8%, #2563eb 15%, #1e3a5f 25%, transparent 35%, transparent 100%);
+  /* Static gradient — only the container rotates (GPU-composited) */
+  background: conic-gradient(from 0deg, transparent 0%, #93c5fd 5%, #60a5fa 10%, #2563eb 18%, #1e3a5f 28%, transparent 40%, transparent 100%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
-  animation: jobswiper-beam-spin 3s linear infinite;
+  animation: jobswiper-beam-spin 5s linear infinite;
   pointer-events: none;
+  will-change: transform;
 }
 
 @keyframes jobswiper-beam-spin {
-  to { --beam-angle: 360deg; }
+  to { transform: rotate(360deg); }
 }
 
 /* Disable beam when saved */
