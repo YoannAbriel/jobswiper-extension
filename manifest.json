@@ -54,7 +54,6 @@
         "https://*.indeed.com.au/*"
       ],
       "js": ["content/indeed.js"],
-      "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
     {
@@ -62,7 +61,6 @@
         "https://*.linkedin.com/jobs/*"
       ],
       "js": ["content/linkedin.js"],
-      "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
     {
