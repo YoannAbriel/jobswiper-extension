@@ -119,7 +119,6 @@ async function loadStats(token) {
     statsEl.innerHTML = `
       <div class="stat"><div class="stat-num">${data.saved}</div><div class="stat-label">Saved</div></div>
       <div class="stat"><div class="stat-num">${data.applied}</div><div class="stat-label">Applied</div></div>
-      <div class="stat"><div class="stat-num">${data.interviews}</div><div class="stat-label">Interviews</div></div>
     `
 
     const profileEl = document.getElementById('profile-bar')

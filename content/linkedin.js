@@ -17,29 +17,37 @@ function extractJobData() {
   data.title = (
     document.querySelector('.job-details-jobs-unified-top-card__job-title')?.textContent ||
     document.querySelector('.jobs-unified-top-card__job-title')?.textContent ||
+    document.querySelector('[class*="job-details"] h1')?.textContent ||
+    document.querySelector('[class*="jobs-unified-top-card"] h1')?.textContent ||
     document.querySelector('h1.t-24')?.textContent ||
     document.querySelector('h2.t-24')?.textContent ||
+    document.querySelector('.job-view-layout h1')?.textContent ||
     ''
   ).trim()
 
   data.company = (
     document.querySelector('.job-details-jobs-unified-top-card__company-name')?.textContent ||
     document.querySelector('.jobs-unified-top-card__company-name')?.textContent ||
+    document.querySelector('[class*="job-details"] [class*="company-name"]')?.textContent ||
     document.querySelector('.topcard__org-name-link')?.textContent ||
+    document.querySelector('.job-view-layout [class*="company"]')?.textContent ||
     ''
   ).trim()
 
   data.location = (
     document.querySelector('.job-details-jobs-unified-top-card__bullet')?.textContent ||
     document.querySelector('.jobs-unified-top-card__bullet')?.textContent ||
+    document.querySelector('[class*="job-details"] [class*="bullet"]')?.textContent ||
     document.querySelector('.topcard__flavor--bullet')?.textContent ||
     ''
   ).trim()
 
   data.description = (
     document.querySelector('.jobs-description-content__text')?.innerText ||
+    document.querySelector('.jobs-description__content')?.innerText ||
     document.querySelector('.jobs-box__html-content')?.innerText ||
     document.querySelector('#job-details')?.innerText ||
+    document.querySelector('[class*="jobs-description"]')?.innerText ||
     ''
   ).trim()
 
@@ -175,39 +183,67 @@ function resetButton(btn) {
 function injectButton() {
   if (document.querySelector('.jobswiper-save-btn')) return
 
+  // Detect job detail: URL path or presence of description/details container
   const isJobDetail = window.location.pathname.includes('/jobs/view') ||
+    window.location.pathname.includes('/jobs/collections') ||
     document.querySelector('.jobs-description-content__text') ||
-    document.querySelector('#job-details')
+    document.querySelector('.jobs-description__content') ||
+    document.querySelector('#job-details') ||
+    document.querySelector('[class*="jobs-description"]') ||
+    document.querySelector('.job-view-layout')
 
   if (!isJobDetail) return
 
   const btn = createSaveButton()
   btn.addEventListener('click', () => handleSave(btn))
 
+  // Try multiple injection points — LinkedIn changes class names across redesigns
   const actionBar = document.querySelector('.jobs-apply-button--top-card') ||
     document.querySelector('.jobs-unified-top-card__content--two-pane') ||
-    document.querySelector('.job-details-jobs-unified-top-card__container')
+    document.querySelector('.job-details-jobs-unified-top-card__container') ||
+    document.querySelector('[class*="jobs-unified-top-card"]') ||
+    document.querySelector('[class*="job-details-jobs-unified-top-card"]') ||
+    document.querySelector('.jobs-details__main-content') ||
+    document.querySelector('.jobs-search__job-details--container') ||
+    document.querySelector('.scaffold-layout__detail')
 
   if (actionBar) {
     const wrapper = document.createElement('div')
     wrapper.style.cssText = 'margin: 8px 0; display: flex;'
     wrapper.appendChild(btn)
-    actionBar.appendChild(wrapper)
+    // Insert at beginning so it's visible without scrolling
+    actionBar.insertBefore(wrapper, actionBar.firstChild)
   } else {
+    // Fallback: fixed position button
     btn.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 99999;'
     document.body.appendChild(btn)
   }
 }
 
+// Initial injection
 injectButton()
-let _linkedinObserver = null
-if (_linkedinObserver) _linkedinObserver.disconnect()
-_linkedinObserver = new MutationObserver(() => {
+
+// Track current job URL to detect navigation within LinkedIn SPA
+let _lastJobUrl = window.location.href
+
+// Poll every 1s — more reliable than MutationObserver for LinkedIn's SPA
+setInterval(() => {
   try {
-    if (!document.querySelector('.jobswiper-save-btn')) injectButton()
+    const currentUrl = window.location.href
+
+    // URL changed — new job selected
+    if (currentUrl !== _lastJobUrl) {
+      _lastJobUrl = currentUrl
+      document.querySelector('.jobswiper-save-btn')?.closest('div')?.remove()
+      // Wait for LinkedIn to render the new job panel
+      setTimeout(() => injectButton(), 500)
+    }
+
+    // Button missing (LinkedIn re-rendered) — re-inject
+    if (!document.querySelector('.jobswiper-save-btn')) {
+      injectButton()
+    }
   } catch {
-    // Extension context invalidated — disconnect observer
-    _linkedinObserver?.disconnect()
+    // Extension context invalidated — silently stop
   }
-})
-_linkedinObserver.observe(document.body, { childList: true, subtree: true })
+}, 1000)
