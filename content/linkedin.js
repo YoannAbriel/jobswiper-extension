@@ -226,7 +226,8 @@ setInterval(() => {
     // URL changed — new job selected
     if (currentUrl !== _lastJobUrl) {
       _lastJobUrl = currentUrl
-      document.querySelector('.jobswiper-save-btn')?.closest('div')?.remove()
+      // Remove only our button, not any LinkedIn elements
+      document.querySelector('.jobswiper-save-btn')?.remove()
       // Wait for LinkedIn to render the new job panel
       setTimeout(() => injectButton(), 500)
     }
