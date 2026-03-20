@@ -133,7 +133,7 @@ async function handleSave(btn, retryCount = 0) {
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
-      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.285 2l-11.285 11.567-5.286-5.011-3.714 3.716 9 8.728 15-15.285z"/></svg> Saved!`
+      btn.innerHTML = `<img src="${_logoUrl}" width="16" height="16" style="border-radius:3px"> Saved!`
       showToast('Job saved!', API_BASE + '/dashboard/jobs')
       return
     }
@@ -170,10 +170,12 @@ async function handleSave(btn, retryCount = 0) {
   }
 }
 
+const _logoUrl = chrome.runtime.getURL('icons/icon16.png')
+
 function resetButton(btn) {
   btn.className = 'jobswiper-save-btn'
   btn.disabled = false
-  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg> Save to JobSwiper`
+  btn.innerHTML = `<img src="${_logoUrl}" width="16" height="16" style="border-radius:3px"> Save to JobSwiper`
 }
 
 // ============================================================================
