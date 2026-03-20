@@ -345,22 +345,35 @@ function getOrCreateBar() {
 }
 
 function getLinkedInJobId() {
-  // Extract job ID from DOM link (most reliable)
-  const jobLink = document.querySelector('.job-details-jobs-unified-top-card__job-title a[href*="/jobs/view/"]') ||
-    document.querySelector('h1 a[href*="/jobs/view/"]') ||
-    document.querySelector('a[href*="/jobs/view/"]')
-  const match = jobLink?.href?.match(/\/jobs\/view\/(\d+)/)
-  if (match) return match[1]
+  // Method 1: currentJobId URL param (LinkedIn uses this on search/collections pages)
+  const urlParam = new URLSearchParams(window.location.search).get('currentJobId')
+  if (urlParam) return urlParam
 
-  // Fallback: currentJobId from URL params
-  return new URLSearchParams(window.location.search).get('currentJobId') || ''
+  // Method 2: job ID from the URL path (/jobs/view/XXXXXXX/)
+  const pathMatch = window.location.pathname.match(/\/jobs\/view\/(\d+)/)
+  if (pathMatch) return pathMatch[1]
+
+  // Method 3: job title link in the detail panel ONLY (not sidebar cards)
+  const titleLink = document.querySelector('.job-details-jobs-unified-top-card__job-title a[href*="/jobs/view/"]') ||
+    document.querySelector('h1.t-24 a[href*="/jobs/view/"]')
+  const linkMatch = titleLink?.href?.match(/\/jobs\/view\/(\d+)/)
+  if (linkMatch) return linkMatch[1]
+
+  return ''
 }
 
 function updateBar() {
   const currentId = getLinkedInJobId()
 
+  // Can't identify job — don't touch anything (avoids resetting "Saved!" state)
+  if (!currentId) {
+    // Still ensure bar exists
+    if (!_bar || !document.body.contains(_bar)) getOrCreateBar()
+    return
+  }
+
   // Same job — nothing to do
-  if (currentId && currentId === _currentJobUrl && _bar && document.body.contains(_bar)) return
+  if (currentId === _currentJobUrl && _bar && document.body.contains(_bar)) return
 
   _currentJobUrl = currentId
 
