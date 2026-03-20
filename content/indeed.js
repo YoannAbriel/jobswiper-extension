@@ -181,7 +181,7 @@ async function handleSave(btn, retryCount = 0) {
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
-      btn.innerHTML = `${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}Saved!`
+      btn.innerHTML = `${_beamHTML}✓ Saved!`
       const jobDetailUrl = response.likedJobId ? `${API_BASE}/dashboard/jobs/${response.likedJobId}` : `${API_BASE}/dashboard/jobs`
       showToast('Job saved to JobSwiper!', jobDetailUrl)
       return
@@ -441,7 +441,7 @@ function injectButton() {
 
       if (data.already_saved) {
         btn.className = 'jobswiper-save-btn saved'
-        btn.innerHTML = `${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}Saved`
+        btn.innerHTML = `${_beamHTML}✓ Saved`
       }
     }).catch(() => scoreBadge.remove())
   })
