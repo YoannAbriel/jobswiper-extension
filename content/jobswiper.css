@@ -3,8 +3,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
   flex-shrink: 0;
 }
 
@@ -12,61 +10,39 @@
   border-radius: 2px;
 }
 
-/* Border beam — particle that travels along the button border */
+/* Border beam — conic gradient spinning along button border (same as landing page) */
 .jobswiper-save-btn {
   position: relative;
+}
+
+.jobswiper-beam {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
   overflow: hidden;
+  padding: 1px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
 }
 
-.jobswiper-save-btn::before {
+.jobswiper-beam::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 20px;
-  height: 20px;
-  background: radial-gradient(circle, #1e3a5f 0%, rgba(30, 58, 95, 0.4) 40%, transparent 70%);
-  border-radius: 50%;
-  opacity: 0.7;
-  pointer-events: none;
-  z-index: 0;
-  animation: jobswiper-beam 3s linear infinite;
+  inset: -100%;
+  background: conic-gradient(from 0deg, transparent 0deg, #2563eb 20deg, #1e3a5f 40deg, transparent 60deg, transparent 360deg);
+  animation: jobswiper-beam-spin 3s linear infinite;
 }
 
-.jobswiper-save-btn::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 12px;
-  height: 12px;
-  background: radial-gradient(circle, #2563eb 0%, rgba(37, 99, 235, 0.3) 50%, transparent 70%);
-  border-radius: 50%;
-  opacity: 0.5;
-  pointer-events: none;
-  z-index: 0;
-  animation: jobswiper-beam 3s linear 1.5s infinite;
-}
-
-/* Ensure button content is above the beam */
-.jobswiper-save-btn > * {
-  position: relative;
-  z-index: 1;
-}
-
-@keyframes jobswiper-beam {
-  0%   { top: 100%; left: 0;    }
-  25%  { top: 0;    left: 0;    }
-  50%  { top: 0;    left: 100%; }
-  75%  { top: 100%; left: 100%; }
-  100% { top: 100%; left: 0;    }
+@keyframes jobswiper-beam-spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Disable beam when saved */
-.jobswiper-save-btn.saved::before,
-.jobswiper-save-btn.saved::after {
-  animation: none;
-  opacity: 0;
+.jobswiper-save-btn.saved .jobswiper-beam {
+  display: none;
 }
 
 /* JobSwiper save button */
