@@ -86,7 +86,9 @@ function extractJobData() {
     const origin = window.location.origin
     data.url = `${origin}/viewjob?jk=${jk}`
   } else {
-    data.url = window.location.href.split('#')[0]
+    // No job key found — build a unique URL from title+company to avoid dedup collisions
+    const slug = (data.title + '-' + data.company).toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)
+    data.url = `${window.location.origin}/extension-import/${slug}-${Date.now()}`
   }
 
   const logoImg = document.querySelector('.jobsearch-CompanyAvatar-image') ||
