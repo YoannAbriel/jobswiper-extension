@@ -344,13 +344,25 @@ function getOrCreateBar() {
   return _bar
 }
 
+function getLinkedInJobId() {
+  // Extract job ID from DOM link (most reliable)
+  const jobLink = document.querySelector('.job-details-jobs-unified-top-card__job-title a[href*="/jobs/view/"]') ||
+    document.querySelector('h1 a[href*="/jobs/view/"]') ||
+    document.querySelector('a[href*="/jobs/view/"]')
+  const match = jobLink?.href?.match(/\/jobs\/view\/(\d+)/)
+  if (match) return match[1]
+
+  // Fallback: currentJobId from URL params
+  return new URLSearchParams(window.location.search).get('currentJobId') || ''
+}
+
 function updateBar() {
-  const jobUrl = window.location.href.split('?')[0]
+  const currentId = getLinkedInJobId()
 
   // Same job — nothing to do
-  if (jobUrl === _currentJobUrl && _bar && document.body.contains(_bar)) return
+  if (currentId && currentId === _currentJobUrl && _bar && document.body.contains(_bar)) return
 
-  _currentJobUrl = jobUrl
+  _currentJobUrl = currentId
 
   // Ensure bar exists
   if (!getOrCreateBar()) return
