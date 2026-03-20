@@ -83,44 +83,15 @@ function extractJobData() {
   )
 
   // Build canonical job URL: /viewjob?jk=xxx
-  // IMPORTANT: extract job key from the DOM, NOT from window.location.search
-  // Indeed's SPA updates the DOM before the URL — reading the URL gives the PREVIOUS job's key
+  // Use URL params directly — the poll now triggers on URL change, so params are always current
   const origin = window.location.origin
-
-  // Method 1: extract from the job title link in the detail panel (most reliable)
-  const titleLink = document.querySelector('h1 a[href*="jk="]') ||
-    document.querySelector('.jobsearch-JobInfoHeader-title-container a[href*="jk="]') ||
-    document.querySelector('a[data-jk]')
-  let jk = null
-  if (titleLink) {
-    const href = titleLink.getAttribute('href') || ''
-    const linkParams = new URLSearchParams(href.split('?')[1] || '')
-    jk = linkParams.get('jk')
-    if (!jk) jk = titleLink.getAttribute('data-jk')
-  }
-
-  // Method 2: extract from the selected job card in the left panel
-  if (!jk) {
-    const selectedCard = document.querySelector('.jobsearch-ResultsList .result.clicked') ||
-      document.querySelector('.job_seen_beacon.clicked') ||
-      document.querySelector('[data-jk].clicked') ||
-      document.querySelector('.jobCard_mainContent a[data-jk]')
-    if (selectedCard) {
-      jk = selectedCard.getAttribute('data-jk') ||
-        selectedCard.closest('[data-jk]')?.getAttribute('data-jk')
-    }
-  }
-
-  // Method 3: fallback to URL params (may be stale on SPA navigation)
-  if (!jk) {
-    const params = new URLSearchParams(window.location.search)
-    jk = params.get('jk') || params.get('vjk')
-  }
+  const params = new URLSearchParams(window.location.search)
+  const jk = params.get('jk') || params.get('vjk')
 
   if (jk) {
     data.url = `${origin}/viewjob?jk=${jk}`
   } else {
-    // Last resort: unique URL from title+company+random
+    // No job key — unique URL from title+company+random
     const slug = (data.title + '-' + data.company).toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)
     const uid = Date.now().toString(36) + Math.random().toString(36).substring(2, 8)
     data.url = `${origin}/extension-import/${slug}-${uid}`
@@ -553,55 +524,44 @@ async function _doInjectBadges() {
   badgesProcessing = false
 }
 
-// Track which job we've injected for
-let injectedForTitle = ''
-
-function getCurrentJobTitle() {
-  return (
-    document.querySelector('h1.jobsearch-JobInfoHeader-title')?.textContent ||
-    document.querySelector('[data-testid="jobsearch-JobInfoHeader-title"]')?.textContent ||
-    document.querySelector('h2.jobTitle span')?.textContent || ''
-  ).trim()
+// Get current job key from URL
+function getCurrentJobKey() {
+  const params = new URLSearchParams(window.location.search)
+  return params.get('jk') || params.get('vjk') || ''
 }
 
 function clearInjected() {
-  // Remove wrapper div containing button + score badge
   const btn = document.querySelector('.jobswiper-save-btn')
   const wrapper = btn?.closest('div')
   if (wrapper && wrapper !== document.body) {
     wrapper.remove()
   } else if (btn) {
-    btn.remove() // fallback: remove button directly
+    btn.remove()
   }
   document.querySelector('.jobswiper-panel')?.remove()
   document.querySelectorAll('.jobswiper-inline-score').forEach(el => el.remove())
-  injectedForTitle = ''
 }
 
 // Run on page load
 injectButton()
 injectSearchBadges()
-injectedForTitle = getCurrentJobTitle()
+let _lastJobKey = getCurrentJobKey()
 
-// Poll every 500ms to detect job changes (more reliable than MutationObserver for Indeed's SPA)
-let _transitioning = false
+// Poll every 500ms — trigger on URL CHANGE (jk/vjk param), not title change
+// The URL is the source of truth for which job is being viewed
 setInterval(() => {
   try {
-    const currentTitle = getCurrentJobTitle()
+    const currentKey = getCurrentJobKey()
 
-    if (currentTitle && currentTitle !== injectedForTitle) {
-      _transitioning = true
+    // URL changed — new job selected, guaranteed correct params
+    if (currentKey && currentKey !== _lastJobKey) {
+      _lastJobKey = currentKey
       clearInjected()
-      // Wait 500ms for Indeed's SPA to update the URL params before extracting data
-      setTimeout(() => {
-        _transitioning = false
-        injectButton()
-        injectedForTitle = getCurrentJobTitle()
-      }, 500)
+      injectButton()
     }
 
-    // Re-inject if button was removed by Indeed's DOM updates (but not during transition)
-    if (!_transitioning && currentTitle && !document.querySelector('.jobswiper-save-btn')) {
+    // Button missing (Indeed re-rendered) — re-inject only if URL hasn't changed
+    if (currentKey && !document.querySelector('.jobswiper-save-btn')) {
       injectButton()
       injectedForTitle = getCurrentJobTitle()
     }
