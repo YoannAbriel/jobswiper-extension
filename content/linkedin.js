@@ -197,16 +197,18 @@ function injectButton() {
   const btn = createSaveButton()
   btn.addEventListener('click', () => handleSave(btn))
 
-  // Find the row that contains both Postuler + Enregistrer, then insert AFTER it
-  const applyRow = document.querySelector('.jobs-apply-button--top-card')?.closest('.mt4') ||
-    document.querySelector('.jobs-s-apply')?.closest('.mt4') ||
-    document.querySelector('.jobs-save-button')?.closest('.mt4')
+  // Find the "Enregistrer" / Save button — our button goes right after it
+  const linkedinSaveBtn = document.querySelector('button.jobs-save-button')
+  // Or find the apply button row
+  const applyContainer = linkedinSaveBtn?.parentElement ||
+    document.querySelector('.jobs-apply-button--top-card')?.closest('.display-flex') ||
+    document.querySelector('.jobs-s-apply')?.parentElement
 
-  if (applyRow) {
+  if (applyContainer) {
     const wrapper = document.createElement('div')
-    wrapper.style.cssText = 'margin: 8px 0 0;'
+    wrapper.style.cssText = 'margin: 8px 0 0; display: block; width: 100%;'
     wrapper.appendChild(btn)
-    applyRow.after(wrapper)
+    applyContainer.after(wrapper)
   } else {
     // Fallback: fixed position button
     btn.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 99999;'
