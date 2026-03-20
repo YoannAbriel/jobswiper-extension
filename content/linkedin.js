@@ -45,13 +45,21 @@ function extractJobData() {
     ''
   ).trim()
 
-  data.location = (
-    document.querySelector('.job-details-jobs-unified-top-card__bullet')?.textContent ||
-    document.querySelector('.jobs-unified-top-card__bullet')?.textContent ||
-    document.querySelector('[class*="job-details"] [class*="bullet"]')?.textContent ||
-    document.querySelector('.topcard__flavor--bullet')?.textContent ||
-    ''
-  ).trim()
+  // Location: first .tvm__text in the tertiary description container (e.g. "Genève, Suisse")
+  const tertiaryDesc = document.querySelector('.job-details-jobs-unified-top-card__tertiary-description-container') ||
+    document.querySelector('.jobs-unified-top-card__subtitle')
+  if (tertiaryDesc) {
+    const firstSpan = tertiaryDesc.querySelector('.tvm__text--low-emphasis')
+    data.location = firstSpan?.textContent?.trim() || ''
+  }
+  if (!data.location) {
+    data.location = (
+      document.querySelector('.job-details-jobs-unified-top-card__bullet')?.textContent ||
+      document.querySelector('.jobs-unified-top-card__bullet')?.textContent ||
+      document.querySelector('.topcard__flavor--bullet')?.textContent ||
+      ''
+    ).trim()
+  }
 
   data.description = (
     document.querySelector('.jobs-description-content__text')?.innerText ||
@@ -62,23 +70,33 @@ function extractJobData() {
     ''
   ).trim()
 
-  const insights = document.querySelectorAll('.jobs-unified-top-card__job-insight, .job-details-jobs-unified-top-card__job-insight')
-  for (const insight of insights) {
-    const text = insight.textContent?.toLowerCase() || ''
-    if (text.includes('full-time') || text.includes('temps plein')) data.job_type = 'Full-time'
-    else if (text.includes('part-time') || text.includes('temps partiel')) data.job_type = 'Part-time'
-    else if (text.includes('contract') || text.includes('contrat')) data.job_type = 'Contract'
-    else if (text.includes('internship') || text.includes('stage')) data.job_type = 'Internship'
-
-    if (text.includes('remote') || text.includes('à distance')) data.is_remote = true
+  // Job type & remote: check both insights and fit-level-preferences buttons
+  const typeElements = document.querySelectorAll(
+    '.jobs-unified-top-card__job-insight, .job-details-jobs-unified-top-card__job-insight, .job-details-fit-level-preferences button'
+  )
+  for (const el of typeElements) {
+    const text = el.textContent?.toLowerCase().trim() || ''
+    if (!data.job_type) {
+      if (text.includes('full-time') || text.includes('temps plein')) data.job_type = 'Full-time'
+      else if (text.includes('part-time') || text.includes('temps partiel')) data.job_type = 'Part-time'
+      else if (text.includes('contract') || text.includes('contrat') || text.includes('cdd')) data.job_type = 'Contract'
+      else if (text.includes('internship') || text.includes('stage') || text.includes('alternance')) data.job_type = 'Internship'
+      else if (text.includes('freelance') || text.includes('indépendant')) data.job_type = 'Freelance'
+    }
+    if (text.includes('remote') || text.includes('à distance') || text.includes('télétravail')) data.is_remote = true
+    if (text.includes('hybride') || text.includes('hybrid')) data.is_remote = false
+    if (text.includes('sur site') || text.includes('on-site')) data.is_remote = false
   }
 
   data.url = window.location.href.split('?')[0]
   data.source = 'linkedin'
 
-  const logo = document.querySelector('.job-details-jobs-unified-top-card__company-logo img') ||
-    document.querySelector('.artdeco-entity-image[data-ghost-url]')
-  if (logo?.src) data.company_logo = logo.src
+  // Company logo: look for the small logo in the top card, then the larger one in company section
+  const logo = document.querySelector('.job-details-jobs-unified-top-card__container--two-pane img[class*="EntityPhoto"]') ||
+    document.querySelector('.job-details-jobs-unified-top-card__company-logo img') ||
+    document.querySelector('.jobs-unified-top-card__company-logo img') ||
+    document.querySelector('.artdeco-entity-lockup__image img[title]')
+  if (logo?.src && !logo.src.includes('data:image/gif')) data.company_logo = logo.src
 
   return data
 }
