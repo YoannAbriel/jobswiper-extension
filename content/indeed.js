@@ -82,18 +82,48 @@ function extractJobData() {
     data.location?.toLowerCase().includes('télétravail')
   )
 
-  // Build canonical job URL: always use /viewjob?jk=xxx format
-  // On /viewjob pages the param is "jk", on search results (split view) it's "vjk"
-  const params = new URLSearchParams(window.location.search)
-  const jk = params.get('jk') || params.get('vjk')
+  // Build canonical job URL: /viewjob?jk=xxx
+  // IMPORTANT: extract job key from the DOM, NOT from window.location.search
+  // Indeed's SPA updates the DOM before the URL — reading the URL gives the PREVIOUS job's key
+  const origin = window.location.origin
+
+  // Method 1: extract from the job title link in the detail panel (most reliable)
+  const titleLink = document.querySelector('h1 a[href*="jk="]') ||
+    document.querySelector('.jobsearch-JobInfoHeader-title-container a[href*="jk="]') ||
+    document.querySelector('a[data-jk]')
+  let jk = null
+  if (titleLink) {
+    const href = titleLink.getAttribute('href') || ''
+    const linkParams = new URLSearchParams(href.split('?')[1] || '')
+    jk = linkParams.get('jk')
+    if (!jk) jk = titleLink.getAttribute('data-jk')
+  }
+
+  // Method 2: extract from the selected job card in the left panel
+  if (!jk) {
+    const selectedCard = document.querySelector('.jobsearch-ResultsList .result.clicked') ||
+      document.querySelector('.job_seen_beacon.clicked') ||
+      document.querySelector('[data-jk].clicked') ||
+      document.querySelector('.jobCard_mainContent a[data-jk]')
+    if (selectedCard) {
+      jk = selectedCard.getAttribute('data-jk') ||
+        selectedCard.closest('[data-jk]')?.getAttribute('data-jk')
+    }
+  }
+
+  // Method 3: fallback to URL params (may be stale on SPA navigation)
+  if (!jk) {
+    const params = new URLSearchParams(window.location.search)
+    jk = params.get('jk') || params.get('vjk')
+  }
+
   if (jk) {
-    const origin = window.location.origin
     data.url = `${origin}/viewjob?jk=${jk}`
   } else {
-    // No job key found — build a unique URL from title+company+random to avoid dedup collisions
+    // Last resort: unique URL from title+company+random
     const slug = (data.title + '-' + data.company).toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)
     const uid = Date.now().toString(36) + Math.random().toString(36).substring(2, 8)
-    data.url = `${window.location.origin}/extension-import/${slug}-${uid}`
+    data.url = `${origin}/extension-import/${slug}-${uid}`
   }
 
   const logoImg = document.querySelector('.jobsearch-CompanyAvatar-image') ||
@@ -535,7 +565,14 @@ function getCurrentJobTitle() {
 }
 
 function clearInjected() {
-  document.querySelector('.jobswiper-save-btn')?.closest('div')?.remove()
+  // Remove wrapper div containing button + score badge
+  const btn = document.querySelector('.jobswiper-save-btn')
+  const wrapper = btn?.closest('div')
+  if (wrapper && wrapper !== document.body) {
+    wrapper.remove()
+  } else if (btn) {
+    btn.remove() // fallback: remove button directly
+  }
   document.querySelector('.jobswiper-panel')?.remove()
   document.querySelectorAll('.jobswiper-inline-score').forEach(el => el.remove())
   injectedForTitle = ''
@@ -547,20 +584,24 @@ injectSearchBadges()
 injectedForTitle = getCurrentJobTitle()
 
 // Poll every 500ms to detect job changes (more reliable than MutationObserver for Indeed's SPA)
+let _transitioning = false
 setInterval(() => {
   try {
     const currentTitle = getCurrentJobTitle()
 
     if (currentTitle && currentTitle !== injectedForTitle) {
+      _transitioning = true
       clearInjected()
+      // Wait 500ms for Indeed's SPA to update the URL params before extracting data
       setTimeout(() => {
+        _transitioning = false
         injectButton()
         injectedForTitle = getCurrentJobTitle()
-      }, 200)
+      }, 500)
     }
 
-    // Re-inject if button was removed by Indeed's DOM updates
-    if (currentTitle && !document.querySelector('.jobswiper-save-btn')) {
+    // Re-inject if button was removed by Indeed's DOM updates (but not during transition)
+    if (!_transitioning && currentTitle && !document.querySelector('.jobswiper-save-btn')) {
       injectButton()
       injectedForTitle = getCurrentJobTitle()
     }
