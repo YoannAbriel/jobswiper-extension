@@ -58,10 +58,14 @@ function extractJobData() {
     document.querySelector('.jobsearch-JobComponent-description')?.innerText || ''
   ).trim()
 
-  data.salary_range = (
+  // Salary — only capture if it contains currency symbols or numbers with k/K
+  const rawSalary = (
     document.querySelector('#salaryInfoAndJobType .css-k5flys span')?.textContent ||
     document.querySelector('[data-testid="attribute_snippet_testid"]')?.textContent || ''
-  ).trim() || undefined
+  ).trim()
+  if (rawSalary && rawSalary.match(/[\d.,]+\s*[€$£]|[€$£]\s*[\d.,]+|[\d.,]+\s*[kK]\s*[-–]|[\d.,]+\s*(?:par\s|\/)\s*(?:an|mois|heure|hour|year|month)/i)) {
+    data.salary_range = rawSalary
+  }
 
   const metaTags = document.querySelectorAll('.jobsearch-JobMetadataHeader-item')
   for (const tag of metaTags) {

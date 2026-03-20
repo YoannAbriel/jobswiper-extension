@@ -119,13 +119,28 @@ function extractJobData() {
     document.querySelector('.artdeco-entity-lockup__image img[title]')
   if (logo?.src && !logo.src.includes('data:image/gif')) data.company_logo = logo.src
 
-  // Salary — LinkedIn shows it in the SALARY section or in insights
-  const salaryEl = document.querySelector('#SALARY')?.nextElementSibling ||
-    document.querySelector('[class*="salary"]')
-  if (salaryEl) {
-    const salaryText = salaryEl.textContent?.trim()
-    if (salaryText && (salaryText.includes('€') || salaryText.includes('$') || salaryText.includes('CHF') || salaryText.includes('£') || salaryText.includes('/an') || salaryText.includes('/yr'))) {
-      data.salary_range = salaryText.substring(0, 100)
+  // Salary — LinkedIn shows it inside #SALARY container or in job insights
+  const salaryContainer = document.querySelector('#SALARY')
+  if (salaryContainer) {
+    // Look for salary text inside the container itself, not its sibling
+    const salarySpans = salaryContainer.querySelectorAll('span, div')
+    for (const s of salarySpans) {
+      const t = s.textContent?.trim() || ''
+      if (t.match(/[\d.,]+\s*[€$£CHF]|[€$£]\s*[\d.,]+|[\d.,]+\s*[kK]\s*[-–]/)) {
+        data.salary_range = t.substring(0, 100)
+        break
+      }
+    }
+  }
+  // Also check insights for salary mentions
+  if (!data.salary_range) {
+    const allInsights = document.querySelectorAll('.job-details-jobs-unified-top-card__job-insight span')
+    for (const s of allInsights) {
+      const t = s.textContent?.trim() || ''
+      if (t.match(/[\d.,]+\s*[€$£CHF]|[€$£]\s*[\d.,]+|[\d.,]+\s*[kK]\s*[-–]/)) {
+        data.salary_range = t.substring(0, 100)
+        break
+      }
     }
   }
 
@@ -147,11 +162,18 @@ function extractJobData() {
     // Industry + size: "Services et conseil en informatique · 1 001-5 000 employés"
     const infoLine = companyBox.querySelector('.t-14.mt5')
     if (infoLine) {
+      // Industry is the direct text content (not inside child spans)
+      // Split full text by the inline-information spans
       const fullText = infoLine.textContent?.trim() || ''
-      // Industry is the first text node
-      const industry = infoLine.childNodes[0]?.textContent?.trim()
-      if (industry && !industry.includes('employés') && !industry.includes('employees')) {
-        data.industry = industry
+      // Get text before the first span (that's the industry)
+      const spans = infoLine.querySelectorAll('.jobs-company__inline-information')
+      let industryText = fullText
+      for (const s of spans) {
+        industryText = industryText.replace(s.textContent || '', '')
+      }
+      industryText = industryText.trim().replace(/\s+/g, ' ')
+      if (industryText && industryText.length > 2 && !industryText.includes('employés') && !industryText.includes('employees')) {
+        data.industry = industryText
       }
       // Company size from spans
       const sizeSpans = infoLine.querySelectorAll('.jobs-company__inline-information')
