@@ -37,7 +37,8 @@
     "https://*.ashbyhq.com/*",
     "https://*.recruitee.com/*",
     "https://*.bamboohr.com/*",
-    "https://*.jazz.co/*"
+    "https://*.jazz.co/*",
+    "https://*.jobup.ch/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -62,6 +63,14 @@
         "https://*.linkedin.com/jobs/*"
       ],
       "js": ["content/linkedin.js"],
+      "css": ["content/jobswiper.css", "content/overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.jobup.ch/*"
+      ],
+      "js": ["content/jobup.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
