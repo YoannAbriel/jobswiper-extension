@@ -197,18 +197,12 @@ function injectButton() {
   const btn = createSaveButton()
   btn.addEventListener('click', () => handleSave(btn))
 
-  // Find the "Enregistrer" / Save button — our button goes right after it
+  // Insert right after LinkedIn's "Enregistrer" button in the same row
   const linkedinSaveBtn = document.querySelector('button.jobs-save-button')
-  // Or find the apply button row
-  const applyContainer = linkedinSaveBtn?.parentElement ||
-    document.querySelector('.jobs-apply-button--top-card')?.closest('.display-flex') ||
-    document.querySelector('.jobs-s-apply')?.parentElement
 
-  if (applyContainer) {
-    const wrapper = document.createElement('div')
-    wrapper.style.cssText = 'margin: 8px 0 0; display: block; width: 100%;'
-    wrapper.appendChild(btn)
-    applyContainer.after(wrapper)
+  if (linkedinSaveBtn) {
+    linkedinSaveBtn.after(btn)
+    btn.style.cssText += 'margin-left: 8px;'
   } else {
     // Fallback: fixed position button
     btn.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 99999;'
