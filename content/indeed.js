@@ -176,7 +176,8 @@ async function handleSave(btn, retryCount = 0) {
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
       btn.innerHTML = `${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}Saved!`
-      showToast('Job saved to JobSwiper!', API_BASE + '/dashboard/jobs')
+      const jobDetailUrl = response.jobId ? `${API_BASE}/dashboard/jobs/${response.jobId}` : `${API_BASE}/dashboard/jobs`
+      showToast('Job saved to JobSwiper!', jobDetailUrl)
       return
     }
 

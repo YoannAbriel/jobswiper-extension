@@ -88,7 +88,28 @@ function extractJobData() {
     if (text.includes('sur site') || text.includes('on-site')) data.is_remote = false
   }
 
-  data.url = window.location.href.split('?')[0]
+  // Build canonical LinkedIn job URL: /jobs/view/XXXXXXX/
+  // The URL bar might show /jobs/collections/... or /jobs/search/... without the job ID
+  // Extract job ID from the job title link in the detail panel
+  const jobLink = document.querySelector('.job-details-jobs-unified-top-card__job-title a[href*="/jobs/view/"]') ||
+    document.querySelector('h1 a[href*="/jobs/view/"]') ||
+    document.querySelector('a[href*="/jobs/view/"]')
+  const jobIdMatch = jobLink?.href?.match(/\/jobs\/view\/(\d+)/)
+
+  if (jobIdMatch) {
+    data.url = `https://www.linkedin.com/jobs/view/${jobIdMatch[1]}/`
+  } else if (window.location.pathname.includes('/jobs/view/')) {
+    data.url = window.location.href.split('?')[0]
+  } else {
+    // Fallback: use currentJobId from URL params or generate unique
+    const currentJobId = new URLSearchParams(window.location.search).get('currentJobId')
+    if (currentJobId) {
+      data.url = `https://www.linkedin.com/jobs/view/${currentJobId}/`
+    } else {
+      const slug = (data.title + '-' + data.company).toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)
+      data.url = `https://www.linkedin.com/extension-import/${slug}-${Date.now()}`
+    }
+  }
   data.source = 'linkedin'
 
   // Company logo
@@ -219,7 +240,8 @@ async function handleSave(btn, retryCount = 0) {
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
       btn.innerHTML = `${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="16" height="16"></span> ` : ''}Saved!`
-      showToast('Job saved!', API_BASE + '/dashboard/jobs')
+      const jobDetailUrl = response.jobId ? `${API_BASE}/dashboard/jobs/${response.jobId}` : `${API_BASE}/dashboard/jobs`
+      showToast('Job saved!', jobDetailUrl)
       return
     }
 
