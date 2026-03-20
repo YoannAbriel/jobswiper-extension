@@ -139,8 +139,10 @@ function extractJobData() {
     }
   }
 
-  // No company logo — Jobup uses a placeholder icon
-  // data.company_logo = undefined
+  // Company logo from the picture element in the header
+  const logoImg = document.querySelector('[data-cy="vacancy-logo"] picture img') ||
+    document.querySelector('[data-cy="vacancy-logo"] img')
+  if (logoImg?.src && !logoImg.src.includes('data:image')) data.company_logo = logoImg.src
 
   // Company info from the company section if present
   const companySection = document.querySelector('[data-cy="vacancy-company"]') ||
