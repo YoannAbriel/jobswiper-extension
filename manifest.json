@@ -109,7 +109,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["icons/icon16.png"],
+      "resources": ["icons/icon16.png", "icons/icon48.png"],
       "matches": ["https://*.indeed.com/*", "https://*.indeed.fr/*", "https://*.indeed.de/*", "https://*.indeed.co.uk/*", "https://*.indeed.co.in/*", "https://*.indeed.ca/*", "https://*.indeed.com.au/*", "https://*.linkedin.com/*"]
     }
   ]

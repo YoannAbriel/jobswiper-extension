@@ -133,7 +133,7 @@ async function handleSave(btn, retryCount = 0) {
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
-      btn.innerHTML = `<img src="${_logoUrl}" width="16" height="16" style="border-radius:3px"> Saved!`
+      btn.innerHTML = `${_logoUrl ? `<img src="${_logoUrl}" width="16" height="16" style="border-radius:3px"> ` : ''}Saved!`
       showToast('Job saved!', API_BASE + '/dashboard/jobs')
       return
     }
@@ -170,12 +170,13 @@ async function handleSave(btn, retryCount = 0) {
   }
 }
 
-const _logoUrl = chrome.runtime.getURL('icons/icon16.png')
+let _logoUrl = ''
+try { _logoUrl = chrome.runtime.getURL('icons/icon48.png') } catch {}
 
 function resetButton(btn) {
   btn.className = 'jobswiper-save-btn'
   btn.disabled = false
-  btn.innerHTML = `<img src="${_logoUrl}" width="16" height="16" style="border-radius:3px"> Save to JobSwiper`
+  btn.innerHTML = `${_logoUrl ? `<img src="${_logoUrl}" width="16" height="16" style="border-radius:3px"> ` : ''}Save to JobSwiper`
 }
 
 // ============================================================================
