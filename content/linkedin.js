@@ -197,21 +197,16 @@ function injectButton() {
   const btn = createSaveButton()
   btn.addEventListener('click', () => handleSave(btn))
 
-  // Try multiple injection points — LinkedIn changes class names across redesigns
-  const actionBar = document.querySelector('.jobs-apply-button--top-card') ||
-    document.querySelector('.jobs-unified-top-card__content--two-pane') ||
-    document.querySelector('.job-details-jobs-unified-top-card__container') ||
-    document.querySelector('[class*="jobs-unified-top-card"]') ||
-    document.querySelector('[class*="job-details-jobs-unified-top-card"]') ||
-    document.querySelector('.jobs-details__main-content') ||
-    document.querySelector('.jobs-search__job-details--container') ||
-    document.querySelector('.scaffold-layout__detail')
+  // Find the row that contains both Postuler + Enregistrer, then insert AFTER it
+  const applyRow = document.querySelector('.jobs-apply-button--top-card')?.closest('.mt4') ||
+    document.querySelector('.jobs-s-apply')?.closest('.mt4') ||
+    document.querySelector('.jobs-save-button')?.closest('.mt4')
 
-  if (actionBar) {
+  if (applyRow) {
     const wrapper = document.createElement('div')
-    wrapper.style.cssText = 'margin: 12px 0 4px; display: block;'
+    wrapper.style.cssText = 'margin: 8px 0 0;'
     wrapper.appendChild(btn)
-    actionBar.appendChild(wrapper)
+    applyRow.after(wrapper)
   } else {
     // Fallback: fixed position button
     btn.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 99999;'
