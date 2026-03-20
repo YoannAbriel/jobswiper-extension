@@ -10,26 +10,7 @@
 // const API_BASE = 'https://www.jobswiper.ai' // Production
 const API_BASE = 'http://localhost:3000' // Dev
 
-// Inject CSS as inline <style> to avoid chrome-extension:// URLs in the DOM
-// (LinkedIn's fetch interceptor catches those and spams ERR_FAILED)
-;(function injectCSS() {
-  if (document.querySelector('#jobswiper-css')) return
-  const files = ['content/jobswiper.css', 'content/overlay.css']
-  files.forEach(f => {
-    try {
-      const url = chrome.runtime.getURL(f)
-      const xhr = new XMLHttpRequest()
-      xhr.open('GET', url, false) // sync — runs before anything else
-      xhr.send()
-      if (xhr.status === 200) {
-        const style = document.createElement('style')
-        style.id = 'jobswiper-css-' + f.replace(/\W/g, '-')
-        style.textContent = xhr.responseText
-        document.head.appendChild(style)
-      }
-    } catch {}
-  })
-})()
+
 
 
 function esc(str) {

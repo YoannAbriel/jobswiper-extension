@@ -9,25 +9,6 @@
 // const API_BASE = 'https://www.jobswiper.ai' // Production
 const API_BASE = 'http://localhost:3000' // Dev
 
-// Inject CSS as inline <style> to avoid chrome-extension:// URLs in the DOM
-;(function injectCSS() {
-  if (document.querySelector('[id^="jobswiper-css"]')) return
-  const files = ['content/jobswiper.css', 'content/overlay.css']
-  files.forEach(f => {
-    try {
-      const url = chrome.runtime.getURL(f)
-      const xhr = new XMLHttpRequest()
-      xhr.open('GET', url, false)
-      xhr.send()
-      if (xhr.status === 200) {
-        const style = document.createElement('style')
-        style.id = 'jobswiper-css-' + f.replace(/\W/g, '-')
-        style.textContent = xhr.responseText
-        document.head.appendChild(style)
-      }
-    } catch {}
-  })
-})()
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()
