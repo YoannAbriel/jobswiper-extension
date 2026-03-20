@@ -209,10 +209,17 @@ function injectButton() {
 
   if (actionBar) {
     const wrapper = document.createElement('div')
-    wrapper.style.cssText = 'margin: 8px 0; display: flex;'
+    wrapper.style.cssText = 'margin: 8px 0 0; display: inline-flex;'
     wrapper.appendChild(btn)
-    // Insert at beginning so it's visible without scrolling
-    actionBar.insertBefore(wrapper, actionBar.firstChild)
+    // Insert after the existing action buttons
+    const applyBtn = actionBar.querySelector('[class*="jobs-apply-button"]') ||
+      actionBar.querySelector('button[class*="jobs-apply"]') ||
+      actionBar.querySelector('.jobs-save-button')
+    if (applyBtn?.parentElement) {
+      applyBtn.parentElement.after(wrapper)
+    } else {
+      actionBar.appendChild(wrapper)
+    }
   } else {
     // Fallback: fixed position button
     btn.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 99999;'
