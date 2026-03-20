@@ -75,9 +75,16 @@ function extractJobData() {
     data.location?.toLowerCase().includes('télétravail')
   )
 
-  data.url = window.location.href.split('#')[0].split('?')[0]
-  const jk = new URLSearchParams(window.location.search).get('jk')
-  if (jk) data.url += '?jk=' + jk
+  // Build canonical job URL: always use /viewjob?jk=xxx format
+  // On /viewjob pages the param is "jk", on search results (split view) it's "vjk"
+  const params = new URLSearchParams(window.location.search)
+  const jk = params.get('jk') || params.get('vjk')
+  if (jk) {
+    const origin = window.location.origin
+    data.url = `${origin}/viewjob?jk=${jk}`
+  } else {
+    data.url = window.location.href.split('#')[0]
+  }
 
   const logoImg = document.querySelector('.jobsearch-CompanyAvatar-image') ||
     document.querySelector('img[class*="company"]')
