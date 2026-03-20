@@ -103,7 +103,7 @@ const _logoUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABX
 function createSaveButton() {
   const btn = document.createElement('button')
   btn.className = 'jobswiper-save-btn'
-  btn.innerHTML = `${_logoUrl ? `<img src="${_logoUrl}" width="14" height="14" style="border-radius:2px"> ` : ''}Save to JobSwiper`
+  btn.innerHTML = `${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}Save to JobSwiper`
   return btn
 }
 
@@ -158,7 +158,7 @@ async function handleSave(btn, retryCount = 0) {
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
-      btn.innerHTML = `${_logoUrl ? `<img src="${_logoUrl}" width="14" height="14" style="border-radius:2px"> ` : ''}Saved!`
+      btn.innerHTML = `${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}Saved!`
       showToast('✅ Job saved to JobSwiper!', API_BASE + '/dashboard/jobs')
       return
     }
@@ -205,7 +205,7 @@ async function handleSave(btn, retryCount = 0) {
 function resetButton(btn) {
   btn.className = 'jobswiper-save-btn'
   btn.disabled = false
-  btn.innerHTML = `${_logoUrl ? `<img src="${_logoUrl}" width="14" height="14" style="border-radius:2px"> ` : ''}Save to JobSwiper`
+  btn.innerHTML = `${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}Save to JobSwiper`
 }
 
 // ============================================================================
