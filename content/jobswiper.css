@@ -1,6 +1,5 @@
-/* Logo particle effect */
+/* Logo wrapper */
 .jobswiper-logo-wrap {
-  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -10,68 +9,62 @@
 }
 
 .jobswiper-logo-wrap img {
-  position: relative;
-  z-index: 1;
   border-radius: 2px;
 }
 
-.jobswiper-logo-wrap::before,
-.jobswiper-logo-wrap::after {
+/* Border beam — particle that travels along the button border */
+.jobswiper-save-btn {
+  position: relative;
+  overflow: hidden;
+}
+
+.jobswiper-save-btn::before {
   content: '';
   position: absolute;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 20px;
+  background: radial-gradient(circle, #1e3a5f 0%, rgba(30, 58, 95, 0.4) 40%, transparent 70%);
   border-radius: 50%;
-  z-index: 0;
-  opacity: 0;
+  opacity: 0.7;
   pointer-events: none;
+  z-index: 0;
+  animation: jobswiper-beam 3s linear infinite;
 }
 
-.jobswiper-logo-wrap::before {
-  width: 3px;
-  height: 3px;
-  background: #1e3a5f;
-  box-shadow:
-    6px -4px 0 0 rgba(30, 58, 95, 0.6),
-    -5px 3px 0 0 rgba(30, 58, 95, 0.4),
-    8px 5px 0 0 rgba(30, 58, 95, 0.3);
-  animation: jobswiper-particles-1 2.5s ease-in-out infinite;
+.jobswiper-save-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(circle, #2563eb 0%, rgba(37, 99, 235, 0.3) 50%, transparent 70%);
+  border-radius: 50%;
+  opacity: 0.5;
+  pointer-events: none;
+  z-index: 0;
+  animation: jobswiper-beam 3s linear 1.5s infinite;
 }
 
-.jobswiper-logo-wrap::after {
-  width: 2px;
-  height: 2px;
-  background: #2563eb;
-  box-shadow:
-    -6px -5px 0 0 rgba(37, 99, 235, 0.5),
-    7px 2px 0 0 rgba(37, 99, 235, 0.35),
-    -3px 7px 0 0 rgba(37, 99, 235, 0.25);
-  animation: jobswiper-particles-2 3s ease-in-out 0.8s infinite;
+/* Ensure button content is above the beam */
+.jobswiper-save-btn > * {
+  position: relative;
+  z-index: 1;
 }
 
-@keyframes jobswiper-particles-1 {
-  0%, 100% { opacity: 0; transform: translate(0, 0) scale(0.5); }
-  20% { opacity: 0.8; transform: translate(-1px, -2px) scale(1); }
-  50% { opacity: 0.5; transform: translate(1px, -3px) scale(0.8); }
-  80% { opacity: 0; transform: translate(2px, -5px) scale(0.3); }
+@keyframes jobswiper-beam {
+  0%   { top: 100%; left: 0;    }
+  25%  { top: 0;    left: 0;    }
+  50%  { top: 0;    left: 100%; }
+  75%  { top: 100%; left: 100%; }
+  100% { top: 100%; left: 0;    }
 }
 
-@keyframes jobswiper-particles-2 {
-  0%, 100% { opacity: 0; transform: translate(0, 0) scale(0.5); }
-  25% { opacity: 0.7; transform: translate(1px, 1px) scale(1); }
-  55% { opacity: 0.4; transform: translate(-1px, -2px) scale(0.7); }
-  85% { opacity: 0; transform: translate(-2px, -4px) scale(0.2); }
-}
-
-/* Subtle glow pulse on hover */
-.jobswiper-save-btn:hover .jobswiper-logo-wrap::before {
-  animation-duration: 1.5s;
-}
-.jobswiper-save-btn:hover .jobswiper-logo-wrap::after {
-  animation-duration: 1.8s;
-}
-
-/* Disable particles when saved (static state) */
-.jobswiper-save-btn.saved .jobswiper-logo-wrap::before,
-.jobswiper-save-btn.saved .jobswiper-logo-wrap::after {
+/* Disable beam when saved */
+.jobswiper-save-btn.saved::before,
+.jobswiper-save-btn.saved::after {
   animation: none;
   opacity: 0;
 }
