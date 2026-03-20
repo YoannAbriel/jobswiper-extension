@@ -90,9 +90,10 @@ function extractJobData() {
     const origin = window.location.origin
     data.url = `${origin}/viewjob?jk=${jk}`
   } else {
-    // No job key found — build a unique URL from title+company to avoid dedup collisions
+    // No job key found — build a unique URL from title+company+random to avoid dedup collisions
     const slug = (data.title + '-' + data.company).toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)
-    data.url = `${window.location.origin}/extension-import/${slug}-${Date.now()}`
+    const uid = Date.now().toString(36) + Math.random().toString(36).substring(2, 8)
+    data.url = `${window.location.origin}/extension-import/${slug}-${uid}`
   }
 
   const logoImg = document.querySelector('.jobsearch-CompanyAvatar-image') ||

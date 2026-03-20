@@ -107,7 +107,8 @@ function extractJobData() {
       data.url = `https://www.linkedin.com/jobs/view/${currentJobId}/`
     } else {
       const slug = (data.title + '-' + data.company).toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)
-      data.url = `https://www.linkedin.com/extension-import/${slug}-${Date.now()}`
+      const uid = Date.now().toString(36) + Math.random().toString(36).substring(2, 8)
+      data.url = `https://www.linkedin.com/extension-import/${slug}-${uid}`
     }
   }
   data.source = 'linkedin'
