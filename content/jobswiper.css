@@ -10,29 +10,26 @@
   border-radius: 2px;
 }
 
-/* Border beam — conic gradient spinning along button border (same as landing page) */
-.jobswiper-save-btn {
+/* Border beam — spinning gradient BEHIND the button, 1px larger, only the edge peeks out */
+.jobswiper-btn-wrap {
   position: relative;
+  display: inline-flex;
 }
 
 .jobswiper-beam {
-  pointer-events: none;
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
+  inset: -1.5px;
+  border-radius: 10px;
   overflow: hidden;
-  padding: 1px;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .jobswiper-beam::before {
   content: '';
   position: absolute;
-  inset: -100%;
-  background: conic-gradient(from 0deg, transparent 0deg, #2563eb 20deg, #1e3a5f 40deg, transparent 60deg, transparent 360deg);
+  inset: -200%;
+  background: conic-gradient(from 0deg, transparent, #2563eb 30deg, #1e3a5f 60deg, transparent 90deg, transparent 360deg);
   animation: jobswiper-beam-spin 3s linear infinite;
 }
 
@@ -40,8 +37,14 @@
   to { transform: rotate(360deg); }
 }
 
+/* Button sits on top of the beam */
+.jobswiper-btn-wrap .jobswiper-save-btn {
+  position: relative;
+  z-index: 1;
+}
+
 /* Disable beam when saved */
-.jobswiper-save-btn.saved .jobswiper-beam {
+.jobswiper-btn-wrap.saved .jobswiper-beam {
   display: none;
 }
 
@@ -118,6 +121,11 @@
 @keyframes jobswiper-toast-in {
   from { transform: translateY(8px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
+}
+
+/* LinkedIn beam: pill-shaped radius */
+.jobswiper-linkedin-bar .jobswiper-beam {
+  border-radius: 18px;
 }
 
 /* LinkedIn-specific: match LinkedIn's artdeco button style */
