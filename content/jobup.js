@@ -344,28 +344,30 @@ function getOrCreateBar() {
   }
 
   // Fetch score for inline badge
-  chrome.storage.local.get('token', ({ token }) => {
-    if (!token) { scoreBadge.remove(); return }
-    const jobData = extractJobData()
-    fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(jobData),
-    }, 8000).then(r => r.json()).then(data => {
-      const score = data.match_score
-      if (score == null) { scoreBadge.remove(); return }
+  try {
+    chrome.storage.local.get('token', ({ token }) => {
+      if (!token) { scoreBadge.remove(); return }
+      const jobData = extractJobData()
+      fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(jobData),
+      }, 8000).then(r => r.json()).then(data => {
+        const score = data.match_score
+        if (score == null) { scoreBadge.remove(); return }
 
-      scoreBadge.textContent = score + '% match'
-      if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
-      else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
-      else { scoreBadge.style.background = '#f4f4f5'; scoreBadge.style.color = '#71717a' }
+        scoreBadge.textContent = score + '% match'
+        if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
+        else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
+        else { scoreBadge.style.background = '#f4f4f5'; scoreBadge.style.color = '#71717a' }
 
-      if (data.already_saved) {
-        _barBtn.className = 'jobswiper-save-btn saved'
-        _barBtn.innerHTML = `${_beamHTML}✓ Saved`
-      }
-    }).catch(() => scoreBadge.remove())
-  })
+        if (data.already_saved) {
+          _barBtn.className = 'jobswiper-save-btn saved'
+          _barBtn.innerHTML = `${_beamHTML}✓ Saved`
+        }
+      }).catch(() => scoreBadge.remove())
+    })
+  } catch { scoreBadge.remove() }
 
   return _bar
 }
@@ -384,7 +386,10 @@ function getJobupJobId() {
 }
 
 function isJobPage() {
-  return window.location.pathname.includes('/jobs/detail') ||
+  // Check URL has jobid param OR is a detail page OR has vacancy elements
+  const hasJobId = new URLSearchParams(window.location.search).has('jobid')
+  return hasJobId ||
+    window.location.pathname.includes('/jobs/detail') ||
     !!document.querySelector('[data-cy="vacancy-title"]') ||
     !!document.querySelector('[data-cy="vacancy-description"]')
 }
