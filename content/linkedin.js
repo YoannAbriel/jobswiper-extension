@@ -197,17 +197,16 @@ function injectButton() {
   const btn = createSaveButton()
   btn.addEventListener('click', () => handleSave(btn))
 
-  // Find the button row: div.mt4 > div.display-flex that contains Postuler + Enregistrer
-  // Must wait for LinkedIn to render these — if not found, return and let poll retry
-  const linkedinSaveBtn = document.querySelector('.mt4 > .display-flex > button.jobs-save-button')
-    || document.querySelector('.mt4 button.jobs-save-button')
+  // Insert OUTSIDE React's managed DOM to avoid being destroyed by re-renders.
+  // Target: after the .mt4 div that contains Postuler+Enregistrer, or after the top card.
+  const buttonRow = document.querySelector('.job-details-jobs-unified-top-card__container--two-pane .mt4')
+    || document.querySelector('.jobs-unified-top-card__content--two-pane .mt4')
 
-  if (linkedinSaveBtn) {
-    // Insert inline next to Enregistrer
-    linkedinSaveBtn.after(btn)
-    btn.style.cssText += 'margin-left: 8px;'
+  if (buttonRow) {
+    btn.style.cssText += 'margin: 8px 0 0;'
+    buttonRow.after(btn)
   } else {
-    // Buttons not rendered yet — don't use fixed fallback, poll will retry
+    // Buttons not rendered yet — don't inject, poll will retry
     return
   }
 }
@@ -217,9 +216,8 @@ injectButton()
 
 // Track current job URL to detect navigation within LinkedIn SPA
 let _lastJobUrl = window.location.href
-let _injectPending = false
 
-// Poll every 2s — more reliable than MutationObserver for LinkedIn's SPA
+// Poll every 1s
 setInterval(() => {
   try {
     const currentUrl = window.location.href
@@ -227,25 +225,14 @@ setInterval(() => {
     // URL changed — new job selected
     if (currentUrl !== _lastJobUrl) {
       _lastJobUrl = currentUrl
-      _injectPending = false
       document.querySelector('.jobswiper-save-btn')?.remove()
-      // Wait for LinkedIn to render the new job panel
-      setTimeout(() => injectButton(), 800)
+      setTimeout(() => injectButton(), 500)
       return
     }
 
-    // Button missing (LinkedIn re-rendered) — debounce re-inject
+    // Button missing — re-inject
     if (!document.querySelector('.jobswiper-save-btn')) {
-      if (_injectPending) {
-        // Second consecutive poll without button — safe to inject
-        _injectPending = false
-        injectButton()
-      } else {
-        // First miss — wait one more cycle to confirm it's not a transient re-render
-        _injectPending = true
-      }
-    } else {
-      _injectPending = false
+      injectButton()
     }
   } catch {
     // Extension context invalidated — silently stop
