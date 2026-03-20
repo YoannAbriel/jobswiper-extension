@@ -122,20 +122,20 @@ function extractJobData() {
   }
 
   // Build canonical URL using jobid query parameter
-  const params = new URLSearchParams(window.location.search)
-  const jobId = params.get('jobid')
+  // Works on both jobup.ch and jobs.ch (same platform)
+  const origin = window.location.origin
+  const urlParams = new URLSearchParams(window.location.search)
+  const jobId = urlParams.get('jobid')
   if (jobId) {
-    data.url = `https://www.jobup.ch/en/jobs/detail/${jobId}/`
+    data.url = `${origin}/en/jobs/detail/${jobId}/`
   } else {
-    // Try to extract job ID from pathname (e.g. /en/jobs/detail/12345/)
-    const pathMatch = window.location.pathname.match(/\/jobs\/detail\/(\d+)/)
+    const pathMatch = window.location.pathname.match(/\/(?:jobs|vacancies)\/(?:detail\/)?([a-f0-9-]+)/)
     if (pathMatch) {
-      data.url = `https://www.jobup.ch/en/jobs/detail/${pathMatch[1]}/`
+      data.url = `${origin}/en/jobs/detail/${pathMatch[1]}/`
     } else {
-      // Fallback: generate a unique URL
       const slug = (data.title + '-' + data.company).toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)
       const uid = Date.now().toString(36) + Math.random().toString(36).substring(2, 8)
-      data.url = `https://www.jobup.ch/extension-import/${slug}-${uid}`
+      data.url = `${origin}/extension-import/${slug}-${uid}`
     }
   }
 
@@ -168,7 +168,7 @@ function extractJobData() {
     }
   }
 
-  data.source = 'jobup'
+  data.source = window.location.hostname.includes('jobs.ch') ? 'jobs.ch' : 'jobup'
   return data
 }
 

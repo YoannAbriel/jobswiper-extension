@@ -38,7 +38,8 @@
     "https://*.recruitee.com/*",
     "https://*.bamboohr.com/*",
     "https://*.jazz.co/*",
-    "https://*.jobup.ch/*"
+    "https://*.jobup.ch/*",
+    "https://*.jobs.ch/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -68,7 +69,8 @@
     },
     {
       "matches": [
-        "https://*.jobup.ch/*"
+        "https://*.jobup.ch/*",
+        "https://*.jobs.ch/*"
       ],
       "js": ["content/jobup.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
