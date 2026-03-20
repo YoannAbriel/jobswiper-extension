@@ -188,12 +188,12 @@ function getOrCreateBar() {
   // If bar already exists in DOM, reuse it
   if (_bar && document.body.contains(_bar)) return _bar
 
-  // Find the stable wrapper that React never replaces
-  const wrapper = document.querySelector('.jobs-search__job-details--wrapper')
-    || document.querySelector('.scaffold-layout__detail')
-    || document.querySelector('.jobs-details__main-content')
+  // Find the top card container — our bar goes right after it
+  // This element is stable (React replaces its children, not the container itself)
+  const topCard = document.querySelector('.job-details-jobs-unified-top-card__container--two-pane')
+    || document.querySelector('.jobs-unified-top-card__content--two-pane')
 
-  if (!wrapper) return null
+  if (!topCard) return null
 
   _barBtn = document.createElement('button')
   _barBtn.className = 'jobswiper-save-btn'
@@ -202,11 +202,11 @@ function getOrCreateBar() {
 
   _bar = document.createElement('div')
   _bar.className = 'jobswiper-linkedin-bar'
-  _bar.style.cssText = 'padding: 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(0,0,0,0.08); background: #f9fafb;'
+  _bar.style.cssText = 'padding: 8px 0 0; display: flex; align-items: center; gap: 10px;'
   _bar.appendChild(_barBtn)
 
-  // Insert at the top of the wrapper
-  wrapper.prepend(_bar)
+  // Insert after the top card — below Postuler/Enregistrer, outside React's scope
+  topCard.parentElement.insertBefore(_bar, topCard.nextSibling)
   return _bar
 }
 

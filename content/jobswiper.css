@@ -73,6 +73,47 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* LinkedIn-specific: match LinkedIn's artdeco button style */
+.jobswiper-linkedin-bar .jobswiper-save-btn {
+  padding: 6px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.6);
+  background: transparent;
+  color: rgba(0, 0, 0, 0.6);
+  font-family: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  z-index: auto;
+}
+
+.jobswiper-linkedin-bar .jobswiper-save-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.9);
+  color: rgba(0, 0, 0, 0.9);
+}
+
+.jobswiper-linkedin-bar .jobswiper-save-btn.saved {
+  background: #057642;
+  border-color: #057642;
+  color: white;
+}
+
+.jobswiper-linkedin-bar .jobswiper-save-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.jobswiper-linkedin-bar .jobswiper-save-btn .spinner {
+  border-color: rgba(0, 0, 0, 0.15);
+  border-top-color: rgba(0, 0, 0, 0.6);
+}
+
+.jobswiper-linkedin-bar .jobswiper-save-btn.saved .spinner {
+  border-color: rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+}
+
 /* Badge on search results */
 .jobswiper-badge {
   display: inline-flex;
