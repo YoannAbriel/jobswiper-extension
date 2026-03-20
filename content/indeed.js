@@ -93,6 +93,16 @@ function extractJobData() {
     document.querySelector('img[class*="company"]')
   if (logoImg?.src && !logoImg.src.includes('placeholder')) data.company_logo = logoImg.src
 
+  // Posted date — Indeed shows "Posted X days ago" or "Publiée il y a X jours"
+  const dateEl = document.querySelector('[data-testid="myJobsStateDate"]') ||
+    document.querySelector('.jobsearch-HiringInsights-entry--bullet')
+  if (dateEl) {
+    const dt = dateEl.textContent?.trim() || ''
+    if (dt.includes('ago') || dt.includes('il y a') || dt.includes('jour') || dt.includes('day')) {
+      data.posted_date = dt
+    }
+  }
+
   data.source = 'indeed'
   return data
 }

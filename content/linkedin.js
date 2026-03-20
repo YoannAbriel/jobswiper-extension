@@ -91,12 +91,78 @@ function extractJobData() {
   data.url = window.location.href.split('?')[0]
   data.source = 'linkedin'
 
-  // Company logo: look for the small logo in the top card, then the larger one in company section
+  // Company logo
   const logo = document.querySelector('.job-details-jobs-unified-top-card__container--two-pane img[class*="EntityPhoto"]') ||
     document.querySelector('.job-details-jobs-unified-top-card__company-logo img') ||
     document.querySelector('.jobs-unified-top-card__company-logo img') ||
     document.querySelector('.artdeco-entity-lockup__image img[title]')
   if (logo?.src && !logo.src.includes('data:image/gif')) data.company_logo = logo.src
+
+  // Salary — LinkedIn shows it in the SALARY section or in insights
+  const salaryEl = document.querySelector('#SALARY')?.nextElementSibling ||
+    document.querySelector('[class*="salary"]')
+  if (salaryEl) {
+    const salaryText = salaryEl.textContent?.trim()
+    if (salaryText && (salaryText.includes('€') || salaryText.includes('$') || salaryText.includes('CHF') || salaryText.includes('£') || salaryText.includes('/an') || salaryText.includes('/yr'))) {
+      data.salary_range = salaryText.substring(0, 100)
+    }
+  }
+
+  // Posted date — "il y a 1 semaine", "il y a 3 jours", etc.
+  if (tertiaryDesc) {
+    const allSpans = tertiaryDesc.querySelectorAll('.tvm__text--low-emphasis')
+    for (const span of allSpans) {
+      const t = span.textContent?.trim() || ''
+      if (t.includes('il y a') || t.includes('ago') || t.includes('jour') || t.includes('semaine') || t.includes('mois') || t.includes('day') || t.includes('week') || t.includes('month') || t.includes('hour') || t.includes('heure')) {
+        data.posted_date = t
+        break
+      }
+    }
+  }
+
+  // Company info section — size, industry, description, website
+  const companyBox = document.querySelector('.jobs-company__box') || document.querySelector('[data-view-name="job-details-about-company-module"]')
+  if (companyBox) {
+    // Industry + size: "Services et conseil en informatique · 1 001-5 000 employés"
+    const infoLine = companyBox.querySelector('.t-14.mt5')
+    if (infoLine) {
+      const fullText = infoLine.textContent?.trim() || ''
+      // Industry is the first text node
+      const industry = infoLine.childNodes[0]?.textContent?.trim()
+      if (industry && !industry.includes('employés') && !industry.includes('employees')) {
+        data.industry = industry
+      }
+      // Company size from spans
+      const sizeSpans = infoLine.querySelectorAll('.jobs-company__inline-information')
+      for (const s of sizeSpans) {
+        const st = s.textContent?.trim() || ''
+        if (st.includes('employé') || st.includes('employee')) {
+          data.company_size = st
+        }
+      }
+    }
+
+    // Company description
+    const descEl = companyBox.querySelector('.inline-show-more-text') || companyBox.querySelector('.jobs-company__company-description')
+    if (descEl) {
+      data.company_description = descEl.textContent?.trim().substring(0, 500) || ''
+    }
+
+    // Company LinkedIn URL
+    const companyLink = companyBox.querySelector('a[href*="/company/"]')
+    if (companyLink?.href) {
+      data.company_website = companyLink.href.split('?')[0]
+    }
+  }
+
+  // Number of applicants
+  if (tertiaryDesc) {
+    const text = tertiaryDesc.textContent || ''
+    const applicantMatch = text.match(/(\d+)\s*(?:autres?\s*personnes?|applicant|people|candidat)/i)
+    if (applicantMatch) {
+      data.applicant_count = parseInt(applicantMatch[1])
+    }
+  }
 
   return data
 }
