@@ -10,27 +10,31 @@
   border-radius: 2px;
 }
 
-/* Border beam — GPU-accelerated rotating conic-gradient */
+/* Border beam — container + spinning child (GPU-accelerated) */
 .jobswiper-save-btn {
   position: relative;
-  overflow: hidden;
 }
 
-/* Outer ring: clips the spinning gradient to the border area */
-.jobswiper-save-btn::before {
-  content: '';
+/* Mask container: clips to border-only area */
+.jobswiper-beam {
   position: absolute;
   inset: -2px;
   border-radius: inherit;
+  overflow: hidden;
   padding: 2px;
-  /* Static gradient — only the container rotates (GPU-composited) */
-  background: conic-gradient(from 0deg, transparent 0%, #93c5fd 5%, #60a5fa 10%, #2563eb 18%, #1e3a5f 28%, transparent 40%, transparent 100%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
-  animation: jobswiper-beam-spin 5s linear infinite;
   pointer-events: none;
+}
+
+/* Spinning gradient: large square, GPU-rotated */
+.jobswiper-beam > div {
+  position: absolute;
+  inset: -100%;
+  background: conic-gradient(from 0deg, transparent 0%, #93c5fd 5%, #60a5fa 10%, #2563eb 18%, #1e3a5f 28%, transparent 40%, transparent 100%);
+  animation: jobswiper-beam-spin 5s linear infinite;
   will-change: transform;
 }
 
@@ -39,9 +43,8 @@
 }
 
 /* Disable beam when saved */
-.jobswiper-save-btn.saved::before {
-  animation: none;
-  background: none;
+.jobswiper-save-btn.saved .jobswiper-beam {
+  display: none;
 }
 
 /* JobSwiper save button */
