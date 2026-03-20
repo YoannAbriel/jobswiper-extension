@@ -217,8 +217,9 @@ injectButton()
 
 // Track current job URL to detect navigation within LinkedIn SPA
 let _lastJobUrl = window.location.href
+let _injectPending = false
 
-// Poll every 1s — more reliable than MutationObserver for LinkedIn's SPA
+// Poll every 2s — more reliable than MutationObserver for LinkedIn's SPA
 setInterval(() => {
   try {
     const currentUrl = window.location.href
@@ -226,15 +227,25 @@ setInterval(() => {
     // URL changed — new job selected
     if (currentUrl !== _lastJobUrl) {
       _lastJobUrl = currentUrl
-      // Remove only our button, not any LinkedIn elements
+      _injectPending = false
       document.querySelector('.jobswiper-save-btn')?.remove()
       // Wait for LinkedIn to render the new job panel
-      setTimeout(() => injectButton(), 500)
+      setTimeout(() => injectButton(), 800)
+      return
     }
 
-    // Button missing (LinkedIn re-rendered) — re-inject
+    // Button missing (LinkedIn re-rendered) — debounce re-inject
     if (!document.querySelector('.jobswiper-save-btn')) {
-      injectButton()
+      if (_injectPending) {
+        // Second consecutive poll without button — safe to inject
+        _injectPending = false
+        injectButton()
+      } else {
+        // First miss — wait one more cycle to confirm it's not a transient re-render
+        _injectPending = true
+      }
+    } else {
+      _injectPending = false
     }
   } catch {
     // Extension context invalidated — silently stop
