@@ -134,7 +134,6 @@ async function handleSave(btn, retryCount = 0) {
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
       btn.innerHTML = `${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="16" height="16"></span> ` : ''}Saved!`
-      const w = btn.closest('.jobswiper-btn-wrap'); if (w) w.classList.add('saved')
       showToast('Job saved!', API_BASE + '/dashboard/jobs')
       return
     }
@@ -177,8 +176,6 @@ function resetButton(btn) {
   btn.className = 'jobswiper-save-btn'
   btn.disabled = false
   btn.innerHTML = `${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="16" height="16"></span> ` : ''}Save to JobSwiper`
-  const wrap = btn.closest('.jobswiper-btn-wrap')
-  if (wrap) wrap.classList.remove('saved')
 }
 
 // ============================================================================
@@ -205,15 +202,10 @@ function getOrCreateBar() {
   resetButton(_barBtn)
   _barBtn.addEventListener('click', () => handleSave(_barBtn))
 
-  const btnWrap = document.createElement('div')
-  btnWrap.className = 'jobswiper-btn-wrap'
-  btnWrap.innerHTML = '<div class="jobswiper-beam"></div>'
-  btnWrap.appendChild(_barBtn)
-
   _bar = document.createElement('div')
   _bar.className = 'jobswiper-linkedin-bar'
   _bar.style.cssText = 'padding: 8px 0 0; display: flex; align-items: center; gap: 10px;'
-  _bar.appendChild(btnWrap)
+  _bar.appendChild(_barBtn)
 
   // Insert after the top card — below Postuler/Enregistrer, outside React's scope
   topCard.parentElement.insertBefore(_bar, topCard.nextSibling)

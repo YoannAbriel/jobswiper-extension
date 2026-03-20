@@ -10,42 +10,40 @@
   border-radius: 2px;
 }
 
-/* Border beam — spinning gradient BEHIND the button, 1px larger, only the edge peeks out */
-.jobswiper-btn-wrap {
+/* Border beam — @property animated conic-gradient on border */
+@property --beam-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.jobswiper-save-btn {
   position: relative;
-  display: inline-flex;
 }
 
-.jobswiper-beam {
-  position: absolute;
-  inset: -1.5px;
-  border-radius: 10px;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.jobswiper-beam::before {
+.jobswiper-save-btn::before {
   content: '';
   position: absolute;
-  inset: -200%;
-  background: conic-gradient(from 0deg, transparent, #2563eb 30deg, #1e3a5f 60deg, transparent 90deg, transparent 360deg);
+  inset: -1.5px;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from var(--beam-angle), transparent 0%, #2563eb 10%, #1e3a5f 20%, transparent 30%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
   animation: jobswiper-beam-spin 3s linear infinite;
+  pointer-events: none;
 }
 
 @keyframes jobswiper-beam-spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Button sits on top of the beam */
-.jobswiper-btn-wrap .jobswiper-save-btn {
-  position: relative;
-  z-index: 1;
+  to { --beam-angle: 360deg; }
 }
 
 /* Disable beam when saved */
-.jobswiper-btn-wrap.saved .jobswiper-beam {
-  display: none;
+.jobswiper-save-btn.saved::before {
+  animation: none;
+  background: none;
 }
 
 /* JobSwiper save button */
@@ -121,11 +119,6 @@
 @keyframes jobswiper-toast-in {
   from { transform: translateY(8px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
-}
-
-/* LinkedIn beam: pill-shaped radius */
-.jobswiper-linkedin-bar .jobswiper-beam {
-  border-radius: 18px;
 }
 
 /* LinkedIn-specific: match LinkedIn's artdeco button style */
