@@ -197,16 +197,18 @@ function injectButton() {
   const btn = createSaveButton()
   btn.addEventListener('click', () => handleSave(btn))
 
-  // Insert right after LinkedIn's "Enregistrer" button in the same row
-  const linkedinSaveBtn = document.querySelector('button.jobs-save-button')
+  // Find the button row: div.mt4 > div.display-flex that contains Postuler + Enregistrer
+  // Must wait for LinkedIn to render these — if not found, return and let poll retry
+  const linkedinSaveBtn = document.querySelector('.mt4 > .display-flex > button.jobs-save-button')
+    || document.querySelector('.mt4 button.jobs-save-button')
 
   if (linkedinSaveBtn) {
+    // Insert inline next to Enregistrer
     linkedinSaveBtn.after(btn)
     btn.style.cssText += 'margin-left: 8px;'
   } else {
-    // Fallback: fixed position button
-    btn.style.cssText = 'position: fixed; bottom: 24px; right: 24px; z-index: 99999;'
-    document.body.appendChild(btn)
+    // Buttons not rendered yet — don't use fixed fallback, poll will retry
+    return
   }
 }
 
