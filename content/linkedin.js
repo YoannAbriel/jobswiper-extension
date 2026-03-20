@@ -1,5 +1,9 @@
 /**
  * JobSwiper Content Script — LinkedIn
+ *
+ * Strategy: inject a persistent bar into the stable wrapper div
+ * (.jobs-search__job-details--wrapper) which React never replaces.
+ * On job change, we just update the button state — no remove/re-inject cycle.
  */
 
 // const API_BASE = 'https://www.jobswiper.ai' // Production
@@ -9,6 +13,12 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeoutMs)
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
+function esc(str) {
+  const d = document.createElement('div')
+  d.textContent = str
+  return d.innerHTML
 }
 
 function extractJobData() {
@@ -51,7 +61,6 @@ function extractJobData() {
     ''
   ).trim()
 
-  // LinkedIn shows job type in the insights
   const insights = document.querySelectorAll('.jobs-unified-top-card__job-insight, .job-details-jobs-unified-top-card__job-insight')
   for (const insight of insights) {
     const text = insight.textContent?.toLowerCase() || ''
@@ -66,7 +75,6 @@ function extractJobData() {
   data.url = window.location.href.split('?')[0]
   data.source = 'linkedin'
 
-  // Company logo
   const logo = document.querySelector('.job-details-jobs-unified-top-card__company-logo img') ||
     document.querySelector('.artdeco-entity-image[data-ghost-url]')
   if (logo?.src) data.company_logo = logo.src
@@ -74,25 +82,20 @@ function extractJobData() {
   return data
 }
 
-function createSaveButton() {
-  const btn = document.createElement('button')
-  btn.className = 'jobswiper-save-btn'
-  btn.innerHTML = `
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-    </svg>
-    Save to JobSwiper
-  `
-  return btn
-}
-
 function showToast(msg, link) {
   const existing = document.querySelector('.jobswiper-toast')
   if (existing) existing.remove()
   const toast = document.createElement('div')
   toast.className = 'jobswiper-toast'
-  toast.innerHTML = msg
-  if (link) toast.innerHTML += `<a href="${link}" target="_blank">Open</a>`
+  toast.textContent = msg
+  if (link) {
+    const a = document.createElement('a')
+    a.href = link
+    a.target = '_blank'
+    a.textContent = 'Open'
+    toast.appendChild(document.createTextNode(' '))
+    toast.appendChild(a)
+  }
   document.body.appendChild(toast)
   setTimeout(() => toast.remove(), 4000)
 }
@@ -111,7 +114,6 @@ async function handleSave(btn, retryCount = 0) {
   try {
     let { token } = await chrome.storage.local.get('token')
 
-    // No token — try auto-connect before giving up
     if (!token) {
       try {
         await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
@@ -132,12 +134,11 @@ async function handleSave(btn, retryCount = 0) {
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.285 2l-11.285 11.567-5.286-5.011-3.714 3.716 9 8.728 15-15.285z"/></svg> Saved!`
-      showToast('✅ Job saved!', API_BASE + '/dashboard/jobs')
+      showToast('Job saved!', API_BASE + '/dashboard/jobs')
       return
     }
 
     if (response && response.error && response.error.includes('Authentication') && retryCount < 2) {
-      // Token expired — try to get a fresh one and retry
       await chrome.storage.local.remove('token')
       try {
         await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
@@ -151,24 +152,19 @@ async function handleSave(btn, retryCount = 0) {
       return
     }
 
-    // Other error — retry once
     if (response && !response.success && retryCount < 1) {
-      console.log('[JobSwiper] Save failed, retrying...', response?.error)
       await new Promise(r => setTimeout(r, 1000))
       return handleSave(btn, retryCount + 1)
     }
 
-    btn.innerHTML = '❌ ' + (response?.error || 'Failed')
+    btn.innerHTML = '❌ ' + esc(response?.error || 'Failed')
     setTimeout(() => resetButton(btn), 2000)
   } catch (err) {
-    // Network error — retry once
     if (retryCount < 1) {
-      console.log('[JobSwiper] Network error, retrying...', err.message)
       await new Promise(r => setTimeout(r, 1000))
       return handleSave(btn, retryCount + 1)
     }
-    console.error('[JobSwiper] Save error:', err)
-    btn.innerHTML = '❌ ' + (err.message || 'Error')
+    btn.innerHTML = '❌ ' + esc(err.message || 'Error')
     showToast('Error: ' + (err.message || 'Could not connect to JobSwiper'))
     setTimeout(() => resetButton(btn), 3000)
   }
@@ -180,61 +176,81 @@ function resetButton(btn) {
   btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg> Save to JobSwiper`
 }
 
-function injectButton() {
-  if (document.querySelector('.jobswiper-save-btn')) return
+// ============================================================================
+// Persistent bar — injected ONCE into a stable wrapper, never removed
+// ============================================================================
 
-  // Detect job detail: URL path or presence of description/details container
-  const isJobDetail = window.location.pathname.includes('/jobs/view') ||
+let _bar = null
+let _barBtn = null
+let _currentJobUrl = ''
+
+function getOrCreateBar() {
+  // If bar already exists in DOM, reuse it
+  if (_bar && document.body.contains(_bar)) return _bar
+
+  // Find the stable wrapper that React never replaces
+  const wrapper = document.querySelector('.jobs-search__job-details--wrapper')
+    || document.querySelector('.scaffold-layout__detail')
+    || document.querySelector('.jobs-details__main-content')
+
+  if (!wrapper) return null
+
+  _barBtn = document.createElement('button')
+  _barBtn.className = 'jobswiper-save-btn'
+  resetButton(_barBtn)
+  _barBtn.addEventListener('click', () => handleSave(_barBtn))
+
+  _bar = document.createElement('div')
+  _bar.className = 'jobswiper-linkedin-bar'
+  _bar.style.cssText = 'padding: 10px 16px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(0,0,0,0.08); background: #f9fafb;'
+  _bar.appendChild(_barBtn)
+
+  // Insert at the top of the wrapper
+  wrapper.prepend(_bar)
+  return _bar
+}
+
+function updateBar() {
+  const jobUrl = window.location.href.split('?')[0]
+
+  // Same job — nothing to do
+  if (jobUrl === _currentJobUrl && _bar && document.body.contains(_bar)) return
+
+  _currentJobUrl = jobUrl
+
+  // Ensure bar exists
+  if (!getOrCreateBar()) return
+
+  // Reset button state for new job
+  resetButton(_barBtn)
+}
+
+// ============================================================================
+// Detection & polling
+// ============================================================================
+
+function isJobPage() {
+  return window.location.pathname.includes('/jobs/view') ||
     window.location.pathname.includes('/jobs/collections') ||
-    document.querySelector('.jobs-description-content__text') ||
-    document.querySelector('.jobs-description__content') ||
     document.querySelector('#job-details') ||
     document.querySelector('[class*="jobs-description"]') ||
     document.querySelector('.job-view-layout')
-
-  if (!isJobDetail) return
-
-  const btn = createSaveButton()
-  btn.addEventListener('click', () => handleSave(btn))
-
-  // Insert OUTSIDE React's managed DOM to avoid being destroyed by re-renders.
-  // Target: after the .mt4 div that contains Postuler+Enregistrer, or after the top card.
-  const buttonRow = document.querySelector('.job-details-jobs-unified-top-card__container--two-pane .mt4')
-    || document.querySelector('.jobs-unified-top-card__content--two-pane .mt4')
-
-  if (buttonRow) {
-    btn.style.cssText += 'margin: 8px 0 0;'
-    buttonRow.after(btn)
-  } else {
-    // Buttons not rendered yet — don't inject, poll will retry
-    return
-  }
 }
 
-// Initial injection
-injectButton()
+// Initial
+if (isJobPage()) updateBar()
 
-// Track current job URL to detect navigation within LinkedIn SPA
-let _lastJobUrl = window.location.href
-
-// Poll every 1s
+// Poll — only updates state, never removes/re-creates the bar
 setInterval(() => {
   try {
-    const currentUrl = window.location.href
-
-    // URL changed — new job selected
-    if (currentUrl !== _lastJobUrl) {
-      _lastJobUrl = currentUrl
-      document.querySelector('.jobswiper-save-btn')?.remove()
-      setTimeout(() => injectButton(), 500)
-      return
-    }
-
-    // Button missing — re-inject
-    if (!document.querySelector('.jobswiper-save-btn')) {
-      injectButton()
+    if (isJobPage()) {
+      updateBar()
+    } else if (_bar && document.body.contains(_bar)) {
+      _bar.remove()
+      _bar = null
+      _currentJobUrl = ''
     }
   } catch {
-    // Extension context invalidated — silently stop
+    // Extension context invalidated
   }
 }, 1000)
