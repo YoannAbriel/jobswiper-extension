@@ -134,6 +134,39 @@
   z-index: auto;
 }
 
+/* WTTJ-specific: z-index for cards */
+.jobswiper-wttj-bar .jobswiper-save-btn {
+  z-index: auto;
+}
+
+/* Card button variant — circular icon-only button for search results */
+.jobswiper-card-btn {
+  padding: 6px !important;
+  border-radius: 50% !important;
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12) !important;
+}
+
+.jobswiper-card-btn:hover {
+  background: rgba(255, 255, 255, 1) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18) !important;
+}
+
+.jobswiper-card-btn.saved {
+  background: #057642 !important;
+  color: white !important;
+}
+
+.jobswiper-card-btn .jobswiper-beam {
+  display: none;
+}
+
 /* Badge on search results */
 .jobswiper-badge {
   display: inline-flex;

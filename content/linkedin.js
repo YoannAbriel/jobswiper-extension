@@ -6,8 +6,8 @@
  * On job change, we just update the button state — no remove/re-inject cycle.
  */
 
-// const API_BASE = 'https://www.jobswiper.ai' // Production
-const API_BASE = 'http://localhost:3000' // Dev
+const API_BASE = 'https://www.jobswiper.ai' // Production
+// const API_BASE = 'http://localhost:3000' // Dev
 
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
@@ -89,27 +89,15 @@ function extractJobData() {
   }
 
   // Build canonical LinkedIn job URL: /jobs/view/XXXXXXX/
-  // The URL bar might show /jobs/collections/... or /jobs/search/... without the job ID
-  // Extract job ID from the job title link in the detail panel
-  const jobLink = document.querySelector('.job-details-jobs-unified-top-card__job-title a[href*="/jobs/view/"]') ||
-    document.querySelector('h1 a[href*="/jobs/view/"]') ||
-    document.querySelector('a[href*="/jobs/view/"]')
-  const jobIdMatch = jobLink?.href?.match(/\/jobs\/view\/(\d+)/)
-
-  if (jobIdMatch) {
-    data.url = `https://www.linkedin.com/jobs/view/${jobIdMatch[1]}/`
-  } else if (window.location.pathname.includes('/jobs/view/')) {
-    data.url = window.location.href.split('?')[0]
+  // Use getLinkedInJobId() which is robust and avoids matching wrong links in the sidebar
+  const detectedJobId = getLinkedInJobId()
+  if (detectedJobId) {
+    data.url = `https://www.linkedin.com/jobs/view/${detectedJobId}/`
   } else {
-    // Fallback: use currentJobId from URL params or generate unique
-    const currentJobId = new URLSearchParams(window.location.search).get('currentJobId')
-    if (currentJobId) {
-      data.url = `https://www.linkedin.com/jobs/view/${currentJobId}/`
-    } else {
-      const slug = (data.title + '-' + data.company).toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)
-      const uid = Date.now().toString(36) + Math.random().toString(36).substring(2, 8)
-      data.url = `https://www.linkedin.com/extension-import/${slug}-${uid}`
-    }
+    // No job ID found — generate a unique URL to avoid dedup collisions
+    const slug = (data.title + '-' + data.company).toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 80)
+    const uid = Date.now().toString(36) + Math.random().toString(36).substring(2, 8)
+    data.url = `https://www.linkedin.com/extension-import/${slug}-${uid}`
   }
   data.source = 'linkedin'
 

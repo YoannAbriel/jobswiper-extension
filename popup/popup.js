@@ -7,8 +7,8 @@
  * 4. Token used for all subsequent API calls
  */
 
-// const API_BASE = 'https://www.jobswiper.ai'
-const API_BASE = 'http://localhost:3000'
+const API_BASE = 'https://www.jobswiper.ai'
+// const API_BASE = 'http://localhost:3000'
 
 function esc(str) {
   const d = document.createElement('div')

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JobSwiper — AI Job Prep",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Save jobs from any website. Generate tailored CVs, cover letters & interview prep with AI.",
   "permissions": [
     "activeTab",
@@ -25,7 +25,6 @@
     "https://*.glassdoor.de/*",
     "https://jobswiper.ai/*",
     "https://www.jobswiper.ai/*",
-    "http://localhost:3000/*",
     "https://*.greenhouse.io/*",
     "https://*.lever.co/*",
     "https://*.myworkdayjobs.com/*",
@@ -39,7 +38,8 @@
     "https://*.bamboohr.com/*",
     "https://*.jazz.co/*",
     "https://*.jobup.ch/*",
-    "https://*.jobs.ch/*"
+    "https://*.jobs.ch/*",
+    "https://*.welcometothejungle.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -78,9 +78,16 @@
     },
     {
       "matches": [
+        "https://*.welcometothejungle.com/*"
+      ],
+      "js": ["content/wttj.js"],
+      "css": ["content/jobswiper.css", "content/overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
         "https://jobswiper.ai/*",
-        "https://www.jobswiper.ai/*",
-        "http://localhost:3000/*"
+        "https://www.jobswiper.ai/*"
       ],
       "js": ["content/detect.js"],
       "run_at": "document_start"

@@ -3,8 +3,8 @@
  * Handles API calls to JobSwiper backend.
  */
 
-// const API_BASE = 'https://www.jobswiper.ai' // Production
-const API_BASE = 'http://localhost:3000' // Dev
+const API_BASE = 'https://www.jobswiper.ai' // Production
+// const API_BASE = 'http://localhost:3000' // Dev
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()

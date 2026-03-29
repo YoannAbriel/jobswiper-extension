@@ -6,8 +6,8 @@
  * Polls every 1s for button injection in case page re-renders.
  */
 
-// const API_BASE = 'https://www.jobswiper.ai' // Production
-const API_BASE = 'http://localhost:3000' // Dev
+const API_BASE = 'https://www.jobswiper.ai' // Production
+// const API_BASE = 'http://localhost:3000' // Dev
 
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
