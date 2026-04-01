@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JobSwiper — AI Job Prep",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Save jobs from any website. Generate tailored CVs, cover letters & interview prep with AI.",
   "permissions": [
     "activeTab",
