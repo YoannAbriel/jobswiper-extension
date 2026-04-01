@@ -7,8 +7,7 @@
  * 3. Match badges on search results list
  */
 
-const API_BASE = 'https://www.jobswiper.ai' // Production
-// const API_BASE = 'http://localhost:3000' // Dev
+const API_BASE = 'https://www.jobswiper.ai'
 
 
 

@@ -1,14 +1,13 @@
 /**
  * JobSwiper Extension — Popup with robust auth flow
  *
- * 1. User logs in on jobswiper.ai (or localhost)
+ * 1. User logs in on jobswiper.ai
  * 2. Clicks "Connect" in popup → calls /api/extension/auth (uses cookies)
  * 3. Gets fresh token → stored in chrome.storage
  * 4. Token used for all subsequent API calls
  */
 
 const API_BASE = 'https://www.jobswiper.ai'
-// const API_BASE = 'http://localhost:3000'
 
 function esc(str) {
   const d = document.createElement('div')

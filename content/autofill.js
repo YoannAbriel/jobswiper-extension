@@ -5,9 +5,7 @@
  * and fills in basic profile fields from stored user data.
  */
 
-// const API_BASE = 'https://www.jobswiper.ai'
-// const API_BASE = 'https://www.jobswiper.ai' // Production
-const API_BASE = 'http://localhost:3000' // Dev
+const API_BASE = 'https://www.jobswiper.ai'
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()

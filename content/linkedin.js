@@ -6,8 +6,7 @@
  * On job change, we just update the button state — no remove/re-inject cycle.
  */
 
-const API_BASE = 'https://www.jobswiper.ai' // Production
-// const API_BASE = 'http://localhost:3000' // Dev
+const API_BASE = 'https://www.jobswiper.ai'
 
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
