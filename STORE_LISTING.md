@@ -7,16 +7,20 @@ JobSwiper — AI Job Prep
 Save jobs from Indeed, LinkedIn & more. Generate tailored CVs, cover letters & interview prep with AI — all in one click.
 
 ## Detailed Description
-JobSwiper turns your job browsing into action. Save any job posting with one click, and let AI prepare everything you need to land the interview.
+JobSwiper turns your browsing into action. Save any listing with one click, and let AI prepare everything you need to land the interview.
 
 How it works:
-Browse jobs on your favorite job boards. Click "Save to JobSwiper" on any listing. Get an instant match score based on your profile. Generate a tailored CV, cover letter, and interview prep — all powered by AI.
-
-Supported job boards:
-Indeed (all countries), LinkedIn, Welcome to the Jungle, Jobup.ch / Jobs.ch, Glassdoor, and ATS platforms like Greenhouse, Lever, Workday and more.
+Browse openings on popular job boards. When you find a role you like, click "Save to JobSwiper." You'll see an instant match score based on your profile. From there, generate a tailored CV, cover letter, and interview prep — all powered by AI.
 
 Key features:
-One-click save from any supported job board. Instant match score showing how well you fit the role. AI-generated CVs tailored to each job posting. Cover letter generation in seconds. Interview preparation notes and simulation. Kanban pipeline to track your applications. Works across multiple languages and countries.
+- One-click save from supported boards
+- Instant match score showing how well you fit the role
+- Generated CVs tailored to each posting
+- Cover letter generation in seconds
+- Interview preparation notes and simulation
+- Kanban pipeline to track your applications
+- Auto-fill on application forms with your profile data
+- Works across multiple languages and countries
 
 Your data, your control:
 We only access job posting data when you click Save. Your auth token is stored locally in your browser. No browsing history is collected or tracked. Full privacy policy at https://www.jobswiper.ai/privacy
