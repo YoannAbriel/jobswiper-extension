@@ -56,88 +56,89 @@ async function autoConnect() {
 autoConnect()
 chrome.runtime.onInstalled.addListener(() => autoConnect())
 
-// Also try when popup asks to connect
-// Listen for messages from content scripts
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'AUTO_CONNECT') {
-    autoConnect().then(() => {
-      chrome.storage.local.get('token', ({ token }) => {
-        sendResponse({ success: !!token, token })
-      })
-    })
-    return true
-  }
+// Relay LinkedIn SPA navigation events to the content script so it can re-render
+// the save bar instantly instead of waiting for the polling tick.
+if (chrome.webNavigation?.onHistoryStateUpdated) {
+  chrome.webNavigation.onHistoryStateUpdated.addListener(
+    (details) => {
+      if (details.frameId !== 0) return
+      chrome.tabs.sendMessage(details.tabId, { type: 'LINKEDIN_NAV', url: details.url }).catch(() => {})
+    },
+    { url: [{ hostSuffix: 'linkedin.com', pathPrefix: '/jobs/' }, { hostSuffix: 'linkedin.com', pathPrefix: '/comm/jobs/' }] },
+  )
+}
 
-  if (message.type === 'SAVE_JOB') {
-    saveJob(message.data, message.token)
-      .then(result => {
-        // Schedule reminder if new save
-        if (result.success && !result.alreadyLiked) {
-          scheduleReminder(message.data.title, message.data.company)
+// Async message handlers wrapped in a single dispatch, so we can use await
+// throughout and always return `true` to keep the channel open.
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  ;(async () => {
+    try {
+      switch (message?.type) {
+        case 'AUTO_CONNECT': {
+          await autoConnect()
+          const { token } = await chrome.storage.local.get('token')
+          sendResponse({ success: !!token, token })
+          return
         }
-        sendResponse(result)
-      })
-      .catch(err => sendResponse({ success: false, error: err.message }))
-    return true
-  }
-
-  if (message.type === 'CHECK_AUTH') {
-    chrome.storage.local.get('token', ({ token }) => {
-      sendResponse({ authenticated: !!token, token })
-    })
-    return true
-  }
-
-  if (message.type === 'SET_TOKEN') {
-    chrome.storage.local.set({ token: message.token }, () => {
-      sendResponse({ success: true })
-    })
-    return true
-  }
-
-  if (message.type === 'LOGOUT') {
-    chrome.storage.local.remove('token', () => {
-      sendResponse({ success: true })
-    })
-    return true
-  }
+        case 'SAVE_JOB': {
+          const result = await saveJob(message.data, message.token)
+          if (result.success && !result.alreadyLiked) {
+            scheduleReminder(message.data.title, message.data.company)
+          }
+          sendResponse(result)
+          return
+        }
+        case 'CHECK_AUTH': {
+          const { token } = await chrome.storage.local.get('token')
+          sendResponse({ authenticated: !!token, token })
+          return
+        }
+        case 'SET_TOKEN': {
+          await chrome.storage.local.set({ token: message.token })
+          sendResponse({ success: true })
+          return
+        }
+        case 'LOGOUT': {
+          await chrome.storage.local.remove('token')
+          sendResponse({ success: true })
+          return
+        }
+        default:
+          sendResponse({ success: false, error: 'Unknown message type' })
+      }
+    } catch (err) {
+      sendResponse({ success: false, error: err?.message || 'Unknown error' })
+    }
+  })()
+  return true
 })
 
 // ── Reminder notifications ──────────────────────────
 
 // Set a reminder when a job is saved
-function scheduleReminder(jobTitle, jobCompany) {
+async function scheduleReminder(jobTitle, jobCompany) {
   const alarmName = `reminder-${Date.now()}`
-  // Remind in 3 days
   chrome.alarms.create(alarmName, { delayInMinutes: 60 * 24 * 3 })
-  // Store reminder data
-  chrome.storage.local.get('reminders', ({ reminders = [] }) => {
-    reminders.push({ alarm: alarmName, title: jobTitle, company: jobCompany, created: Date.now() })
-    // Keep max 20 reminders
-    if (reminders.length > 20) reminders = reminders.slice(-20)
-    chrome.storage.local.set({ reminders })
-  })
+  const { reminders = [] } = await chrome.storage.local.get('reminders')
+  const next = [...reminders, { alarm: alarmName, title: jobTitle, company: jobCompany, created: Date.now() }].slice(-20)
+  await chrome.storage.local.set({ reminders: next })
 }
 
 // Handle alarm fire
-chrome.alarms.onAlarm.addListener((alarm) => {
+chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (!alarm.name.startsWith('reminder-')) return
-  chrome.storage.local.get('reminders', ({ reminders = [] }) => {
-    const reminder = reminders.find(r => r.alarm === alarm.name)
-    if (reminder) {
-      chrome.notifications.create(alarm.name, {
-        type: 'basic',
-        iconUrl: 'icons/icon128.png',
-        title: 'JobSwiper Reminder',
-        message: `You saved "${reminder.title}" at ${reminder.company} 3 days ago. Ready to apply?`,
-        buttons: [{ title: 'Open JobSwiper' }],
-        priority: 1,
-      })
-      // Remove from stored reminders
-      const updated = reminders.filter(r => r.alarm !== alarm.name)
-      chrome.storage.local.set({ reminders: updated })
-    }
+  const { reminders = [] } = await chrome.storage.local.get('reminders')
+  const reminder = reminders.find(r => r.alarm === alarm.name)
+  if (!reminder) return
+  chrome.notifications.create(alarm.name, {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: 'JobSwiper Reminder',
+    message: `You saved "${reminder.title}" at ${reminder.company} 3 days ago. Ready to apply?`,
+    buttons: [{ title: 'Open JobSwiper' }],
+    priority: 1,
   })
+  await chrome.storage.local.set({ reminders: reminders.filter(r => r.alarm !== alarm.name) })
 })
 
 // Handle notification click

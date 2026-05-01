@@ -57,14 +57,16 @@ function showLoggedOut() {
   document.body.classList.add('logged-out')
 }
 
-// Connect button — tries auto-connect (tab scan) then cookie fallback
+// Connect button: tries auto-connect (tab scan) then cookie fallback.
+// Brave/Firefox can block the cookie fallback, so when both fail we open
+// the dashboard in a new tab so the user can log in and retry.
 document.getElementById('connect-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('connect-btn')
   const origText = btn.textContent
   btn.textContent = 'Connecting...'
   btn.disabled = true
 
-  // Try 1: auto-connect via open tab (reads localStorage)
+  // Try 1: auto-connect via open tab (reads localStorage from a same-origin tab)
   try {
     const result = await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
     if (result?.success && result.token) {
@@ -73,7 +75,7 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
     }
   } catch {}
 
-  // Try 2: cookie-based auth endpoint
+  // Try 2: cookie-based auth endpoint (may be blocked by Brave Shields)
   try {
     const res = await fetchWithTimeout(`${API_BASE}/api/extension/auth`, {
       credentials: 'include',
@@ -88,8 +90,11 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
     }
   } catch {}
 
-  btn.textContent = 'Open JobSwiper & log in first'
-  setTimeout(() => { btn.textContent = origText; btn.disabled = false }, 3000)
+  // Both paths failed: open the dashboard so the user can log in,
+  // then they reopen the popup and click Connect again.
+  btn.textContent = 'Opening JobSwiper...'
+  chrome.tabs.create({ url: `${API_BASE}/dashboard` })
+  setTimeout(() => { btn.textContent = origText; btn.disabled = false }, 1500)
 })
 
 // Logout

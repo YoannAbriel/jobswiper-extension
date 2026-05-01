@@ -9,8 +9,15 @@
     "alarms",
     "notifications",
     "tabs",
-    "scripting"
+    "scripting",
+    "webNavigation"
   ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "jobswiper@jobswiper.ai",
+      "strict_min_version": "121.0"
+    }
+  },
   "host_permissions": [
     "https://*.indeed.com/*",
     "https://*.indeed.fr/*",
@@ -61,7 +68,8 @@
     },
     {
       "matches": [
-        "https://*.linkedin.com/jobs/*"
+        "https://*.linkedin.com/jobs/*",
+        "https://*.linkedin.com/comm/jobs/*"
       ],
       "js": ["content/linkedin.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],

@@ -383,20 +383,68 @@ function isJobPage() {
     document.querySelector('.job-view-layout')
 }
 
-// Initial
-if (isJobPage()) updateBar()
+if (!window.__jobswiper_linkedin_loaded) {
+  window.__jobswiper_linkedin_loaded = true
 
-// Poll — only updates state, never removes/re-creates the bar
-setInterval(() => {
+  // Coalesce bursts of mutations + nav events into a single rAF tick.
+  // Without the flag, multiple requestAnimationFrame(cb) registrations in the
+  // same frame each fire on the next tick (rAF does not auto-dedupe).
+  let _scheduled = false
+  function scheduleUpdate() {
+    if (_scheduled) return
+    _scheduled = true
+    requestAnimationFrame(() => {
+      _scheduled = false
+      try {
+        if (isJobPage()) {
+          updateBar()
+        } else if (_bar && document.body.contains(_bar)) {
+          _bar.remove()
+          _bar = null
+          _currentJobUrl = ''
+        }
+      } catch {
+        // Extension context invalidated
+      }
+    })
+  }
+
+  // LinkedIn navigates via history API without a full reload; intercept it so
+  // the bar appears in the same frame instead of waiting for the safety poll.
+  const _origPushState = history.pushState
+  const _origReplaceState = history.replaceState
+  history.pushState = function (...args) {
+    const ret = _origPushState.apply(this, args)
+    scheduleUpdate()
+    return ret
+  }
+  history.replaceState = function (...args) {
+    const ret = _origReplaceState.apply(this, args)
+    scheduleUpdate()
+    return ret
+  }
+  window.addEventListener('popstate', scheduleUpdate)
+
   try {
-    if (isJobPage()) {
-      updateBar()
-    } else if (_bar && document.body.contains(_bar)) {
-      _bar.remove()
-      _bar = null
-      _currentJobUrl = ''
-    }
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg?.type === 'LINKEDIN_NAV') scheduleUpdate()
+    })
   } catch {
     // Extension context invalidated
   }
-}, 1000)
+
+  // Scope the observer to the layout shell so feed/comments mutations don't
+  // wake us up. Falls back to body when scaffold-layout isn't mounted yet.
+  try {
+    const observerRoot = document.querySelector('.scaffold-layout') ?? document.body
+    new MutationObserver(scheduleUpdate).observe(observerRoot, { childList: true, subtree: true })
+  } catch {
+    // Older browsers without MutationObserver fall back to the safety poll below
+  }
+
+  scheduleUpdate()
+
+  // Safety net for cases the observer misses (e.g. observer attached before
+  // scaffold-layout existed, or LinkedIn re-mounting the layout root).
+  setInterval(scheduleUpdate, 1500)
+}
