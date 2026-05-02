@@ -21,10 +21,29 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
 }
 
+// Brave 1.77.x sometimes leaves the SW dormant; the first sendMessage
+// times out silently. One retry with a short backoff recovers.
+async function callSW(message, { timeoutMs = 3000, retries = 1 } = {}) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let timeoutId
+    try {
+      const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('sw_timeout')), timeoutMs)
+      })
+      return await Promise.race([chrome.runtime.sendMessage(message), timeout])
+    } catch (err) {
+      if (attempt === retries) throw err
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)))
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // First: try auto-connect (scan open tabs for JobSwiper)
   try {
-    const result = await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+    const result = await callSW({ type: 'AUTO_CONNECT' })
     if (result?.success && result.token) {
       showLoggedIn(result.token)
       return
@@ -57,23 +76,25 @@ function showLoggedOut() {
   document.body.classList.add('logged-out')
 }
 
-// Connect button — tries auto-connect (tab scan) then cookie fallback
+// Connect button: tries auto-connect (tab scan) then cookie fallback.
+// Brave/Firefox can block the cookie fallback, so when both fail we open
+// the dashboard in a new tab so the user can log in and retry.
 document.getElementById('connect-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('connect-btn')
   const origText = btn.textContent
   btn.textContent = 'Connecting...'
   btn.disabled = true
 
-  // Try 1: auto-connect via open tab (reads localStorage)
+  // Try 1: auto-connect via open tab (reads localStorage from a same-origin tab)
   try {
-    const result = await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+    const result = await callSW({ type: 'AUTO_CONNECT' })
     if (result?.success && result.token) {
       showLoggedIn(result.token)
       return
     }
   } catch {}
 
-  // Try 2: cookie-based auth endpoint
+  // Try 2: cookie-based auth endpoint (may be blocked by Brave Shields)
   try {
     const res = await fetchWithTimeout(`${API_BASE}/api/extension/auth`, {
       credentials: 'include',
@@ -88,8 +109,11 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
     }
   } catch {}
 
-  btn.textContent = 'Open JobSwiper & log in first'
-  setTimeout(() => { btn.textContent = origText; btn.disabled = false }, 3000)
+  // Both paths failed: open the dashboard so the user can log in,
+  // then they reopen the popup and click Connect again.
+  btn.textContent = 'Opening JobSwiper...'
+  chrome.tabs.create({ url: `${API_BASE}/dashboard` })
+  setTimeout(() => { btn.textContent = origText; btn.disabled = false }, 1500)
 })
 
 // Logout

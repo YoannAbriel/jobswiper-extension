@@ -383,20 +383,70 @@ function isJobPage() {
     document.querySelector('.job-view-layout')
 }
 
-// Initial
-if (isJobPage()) updateBar()
+if (!window.__jobswiper_linkedin_loaded) {
+  window.__jobswiper_linkedin_loaded = true
 
-// Poll — only updates state, never removes/re-creates the bar
-setInterval(() => {
-  try {
-    if (isJobPage()) {
-      updateBar()
-    } else if (_bar && document.body.contains(_bar)) {
-      _bar.remove()
-      _bar = null
-      _currentJobUrl = ''
+  // Coalesce bursts of mutations + nav events into a single tick.
+  // Without the flag, multiple requestAnimationFrame(cb) registrations in
+  // the same frame each fire next tick (rAF does not auto-dedupe).
+  // When the tab is hidden, rAF is paused, so fall back to setTimeout so
+  // an SPA navigation while backgrounded still updates state.
+  let _scheduled = false
+  function scheduleUpdate() {
+    if (_scheduled) return
+    _scheduled = true
+    const run = () => {
+      _scheduled = false
+      if (!chrome.runtime?.id) return
+      try {
+        attachObserver()
+        if (isJobPage()) {
+          updateBar()
+        } else if (_bar && document.body.contains(_bar)) {
+          _bar.remove()
+          _bar = null
+          _currentJobUrl = ''
+        }
+      } catch {
+        // Extension context invalidated mid-tick
+      }
     }
+    if (document.hidden) setTimeout(run, 0)
+    else requestAnimationFrame(run)
+  }
+
+  // The MAIN-world script (linkedin-main.js) patches history.pushState
+  // there and dispatches this event. Patching from the isolated world is a
+  // no-op because each world has its own window.history copy.
+  window.addEventListener('jobswiper:locationchange', scheduleUpdate)
+
+  // Background relay (chrome.webNavigation.onHistoryStateUpdated): a
+  // belt-and-braces second source of nav signals.
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (msg?.type === 'LINKEDIN_NAV') scheduleUpdate()
+    })
   } catch {
     // Extension context invalidated
   }
-}, 1000)
+
+  // Re-resolve the observer root on each tick of scheduleUpdate: LinkedIn
+  // re-mounts .scaffold-layout occasionally and a stale observer would
+  // silently stop emitting. Falls back to body until scaffold-layout exists.
+  let _mo = null
+  let _moRoot = null
+  function attachObserver() {
+    if (!chrome.runtime?.id || typeof MutationObserver !== 'function') return
+    const root = document.querySelector('.scaffold-layout') ?? document.body
+    if (!root || root === _moRoot) return
+    _mo?.disconnect()
+    _mo = new MutationObserver(scheduleUpdate)
+    _mo.observe(root, { childList: true, subtree: true })
+    _moRoot = root
+  }
+  attachObserver()
+  scheduleUpdate()
+
+  // Safety net for cases all signals miss (very rare).
+  setInterval(scheduleUpdate, 1500)
+}
