@@ -130,12 +130,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   const { reminders = [] } = await chrome.storage.local.get('reminders')
   const reminder = reminders.find(r => r.alarm === alarm.name)
   if (!reminder) return
+  // Buttons are silently ignored on Firefox (Bugzilla 1190681). The body
+  // click is wired to onClicked below and works on every browser.
   chrome.notifications.create(alarm.name, {
     type: 'basic',
     iconUrl: 'icons/icon128.png',
     title: 'JobSwiper Reminder',
     message: `You saved "${reminder.title}" at ${reminder.company} 3 days ago. Ready to apply?`,
-    buttons: [{ title: 'Open JobSwiper' }],
     priority: 1,
   })
   await chrome.storage.local.set({ reminders: reminders.filter(r => r.alarm !== alarm.name) })

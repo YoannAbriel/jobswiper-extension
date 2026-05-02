@@ -21,10 +21,29 @@ function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
 }
 
+// Brave 1.77.x sometimes leaves the SW dormant; the first sendMessage
+// times out silently. One retry with a short backoff recovers.
+async function callSW(message, { timeoutMs = 3000, retries = 1 } = {}) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let timeoutId
+    try {
+      const timeout = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('sw_timeout')), timeoutMs)
+      })
+      return await Promise.race([chrome.runtime.sendMessage(message), timeout])
+    } catch (err) {
+      if (attempt === retries) throw err
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)))
+    } finally {
+      clearTimeout(timeoutId)
+    }
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // First: try auto-connect (scan open tabs for JobSwiper)
   try {
-    const result = await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+    const result = await callSW({ type: 'AUTO_CONNECT' })
     if (result?.success && result.token) {
       showLoggedIn(result.token)
       return
@@ -68,7 +87,7 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
 
   // Try 1: auto-connect via open tab (reads localStorage from a same-origin tab)
   try {
-    const result = await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+    const result = await callSW({ type: 'AUTO_CONNECT' })
     if (result?.success && result.token) {
       showLoggedIn(result.token)
       return

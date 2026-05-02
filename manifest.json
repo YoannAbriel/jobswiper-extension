@@ -3,6 +3,7 @@
   "name": "JobSwiper — AI Job Prep",
   "version": "1.0.2",
   "description": "Save jobs from Indeed, LinkedIn, Glassdoor & 10+ job boards. Generate tailored CVs, cover letters & interview prep with AI.",
+  "minimum_chrome_version": "120",
   "permissions": [
     "activeTab",
     "storage",
@@ -49,7 +50,8 @@
     "https://*.welcometothejungle.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
   },
   "content_scripts": [
     {
@@ -65,6 +67,15 @@
       "js": ["content/indeed.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.linkedin.com/jobs/*",
+        "https://*.linkedin.com/comm/jobs/*"
+      ],
+      "js": ["content/linkedin-main.js"],
+      "world": "MAIN",
+      "run_at": "document_start"
     },
     {
       "matches": [

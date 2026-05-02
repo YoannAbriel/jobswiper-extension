@@ -386,16 +386,20 @@ function isJobPage() {
 if (!window.__jobswiper_linkedin_loaded) {
   window.__jobswiper_linkedin_loaded = true
 
-  // Coalesce bursts of mutations + nav events into a single rAF tick.
-  // Without the flag, multiple requestAnimationFrame(cb) registrations in the
-  // same frame each fire on the next tick (rAF does not auto-dedupe).
+  // Coalesce bursts of mutations + nav events into a single tick.
+  // Without the flag, multiple requestAnimationFrame(cb) registrations in
+  // the same frame each fire next tick (rAF does not auto-dedupe).
+  // When the tab is hidden, rAF is paused, so fall back to setTimeout so
+  // an SPA navigation while backgrounded still updates state.
   let _scheduled = false
   function scheduleUpdate() {
     if (_scheduled) return
     _scheduled = true
-    requestAnimationFrame(() => {
+    const run = () => {
       _scheduled = false
+      if (!chrome.runtime?.id) return
       try {
+        attachObserver()
         if (isJobPage()) {
           updateBar()
         } else if (_bar && document.body.contains(_bar)) {
@@ -404,27 +408,20 @@ if (!window.__jobswiper_linkedin_loaded) {
           _currentJobUrl = ''
         }
       } catch {
-        // Extension context invalidated
+        // Extension context invalidated mid-tick
       }
-    })
+    }
+    if (document.hidden) setTimeout(run, 0)
+    else requestAnimationFrame(run)
   }
 
-  // LinkedIn navigates via history API without a full reload; intercept it so
-  // the bar appears in the same frame instead of waiting for the safety poll.
-  const _origPushState = history.pushState
-  const _origReplaceState = history.replaceState
-  history.pushState = function (...args) {
-    const ret = _origPushState.apply(this, args)
-    scheduleUpdate()
-    return ret
-  }
-  history.replaceState = function (...args) {
-    const ret = _origReplaceState.apply(this, args)
-    scheduleUpdate()
-    return ret
-  }
-  window.addEventListener('popstate', scheduleUpdate)
+  // The MAIN-world script (linkedin-main.js) patches history.pushState
+  // there and dispatches this event. Patching from the isolated world is a
+  // no-op because each world has its own window.history copy.
+  window.addEventListener('jobswiper:locationchange', scheduleUpdate)
 
+  // Background relay (chrome.webNavigation.onHistoryStateUpdated): a
+  // belt-and-braces second source of nav signals.
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg?.type === 'LINKEDIN_NAV') scheduleUpdate()
@@ -433,18 +430,23 @@ if (!window.__jobswiper_linkedin_loaded) {
     // Extension context invalidated
   }
 
-  // Scope the observer to the layout shell so feed/comments mutations don't
-  // wake us up. Falls back to body when scaffold-layout isn't mounted yet.
-  try {
-    const observerRoot = document.querySelector('.scaffold-layout') ?? document.body
-    new MutationObserver(scheduleUpdate).observe(observerRoot, { childList: true, subtree: true })
-  } catch {
-    // Older browsers without MutationObserver fall back to the safety poll below
+  // Re-resolve the observer root on each tick of scheduleUpdate: LinkedIn
+  // re-mounts .scaffold-layout occasionally and a stale observer would
+  // silently stop emitting. Falls back to body until scaffold-layout exists.
+  let _mo = null
+  let _moRoot = null
+  function attachObserver() {
+    if (!chrome.runtime?.id || typeof MutationObserver !== 'function') return
+    const root = document.querySelector('.scaffold-layout') ?? document.body
+    if (!root || root === _moRoot) return
+    _mo?.disconnect()
+    _mo = new MutationObserver(scheduleUpdate)
+    _mo.observe(root, { childList: true, subtree: true })
+    _moRoot = root
   }
-
+  attachObserver()
   scheduleUpdate()
 
-  // Safety net for cases the observer misses (e.g. observer attached before
-  // scaffold-layout existed, or LinkedIn re-mounting the layout root).
+  // Safety net for cases all signals miss (very rare).
   setInterval(scheduleUpdate, 1500)
 }
