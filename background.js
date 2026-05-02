@@ -170,7 +170,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           return
         }
         case 'SET_TOKEN': {
+          // Legacy single-field write, kept for content scripts injected
+          // before the STORE_AUTH path landed. Remove after one release.
           await chrome.storage.local.set({ token: message.token })
+          sendResponse({ success: true })
+          return
+        }
+        case 'STORE_AUTH': {
+          // Single-writer entry for the auth bundle so popup, detect, and
+          // the SW itself never race on chrome.storage.local writes.
+          const update = { token: message.token }
+          if (message.refresh_token !== undefined) update.refresh_token = message.refresh_token
+          if (message.expires_at !== undefined) update.expires_at = message.expires_at
+          await chrome.storage.local.set(update)
+          sendResponse({ success: true })
+          return
+        }
+        case 'STORE_PROFILE': {
+          await chrome.storage.local.set({ userProfile: message.profile })
           sendResponse({ success: true })
           return
         }
