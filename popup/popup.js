@@ -102,11 +102,22 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
     if (res.ok) {
       const data = await res.json()
       if (data.token) {
-        await chrome.storage.local.set({
-          token: data.token,
-          refresh_token: data.refresh_token || null,
-          expires_at: data.expires_at || null,
-        })
+        try {
+          await callSW({
+            type: 'STORE_AUTH',
+            token: data.token,
+            refresh_token: data.refresh_token ?? null,
+            expires_at: data.expires_at ?? null,
+          })
+        } catch {
+          // SW unreachable (e.g. brief update window): direct fallback so
+          // the user is not blocked. Only the popup writes on this path.
+          await chrome.storage.local.set({
+            token: data.token,
+            refresh_token: data.refresh_token ?? null,
+            expires_at: data.expires_at ?? null,
+          })
+        }
         showLoggedIn(data.token)
         return
       }
