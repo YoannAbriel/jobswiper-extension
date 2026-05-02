@@ -5,6 +5,12 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
+// Refresh the access token when it has less than this many seconds left.
+// 120s buys enough headroom that a slow saveJob fetch still completes
+// against a still-valid token even after the SW yields between
+// getValidToken() and the actual fetch.
+const REFRESH_THRESHOLD_SECONDS = 120
+
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeoutMs)
@@ -34,7 +40,12 @@ async function autoConnect() {
             if (key.includes('auth-token') && key.includes('sb-')) {
               try {
                 const data = JSON.parse(localStorage.getItem(key))
-                return data?.access_token || null
+                if (!data?.access_token) return null
+                return {
+                  access_token: data.access_token,
+                  refresh_token: data.refresh_token || null,
+                  expires_at: data.expires_at || null,
+                }
               } catch { return null }
             }
           }
@@ -42,14 +53,72 @@ async function autoConnect() {
         },
       })
 
-      const accessToken = results?.[0]?.result
-      if (accessToken) {
-        await chrome.storage.local.set({ token: accessToken })
+      const session = results?.[0]?.result
+      if (session?.access_token) {
+        await chrome.storage.local.set({
+          token: session.access_token,
+          refresh_token: session.refresh_token,
+          expires_at: session.expires_at,
+        })
         console.log('[JobSwiper] Auto-connected via open tab')
         return
       }
     } catch {}
   }
+}
+
+// ── Token refresh ────────────────────────────────────
+
+async function refreshAccessToken(refreshToken) {
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/api/extension/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    }, 8000)
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data?.token) return null
+    return {
+      token: data.token,
+      refresh_token: data.refresh_token,
+      expires_at: data.expires_at,
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Returns a non-null access token if one is available (refreshed when
+ * needed), or null when there's nothing to use. Falls back to the stored
+ * token on refresh failure: the upcoming fetch will get a 401 and surface
+ * the auth error path naturally.
+ */
+async function getValidToken() {
+  const { token, refresh_token, expires_at } = await chrome.storage.local.get([
+    'token', 'refresh_token', 'expires_at',
+  ])
+  if (!token) return null
+
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const needsRefresh = expires_at && (expires_at - nowSeconds) < REFRESH_THRESHOLD_SECONDS
+  if (!needsRefresh || !refresh_token) return token
+
+  const refreshed = await refreshAccessToken(refresh_token)
+  if (refreshed) {
+    await chrome.storage.local.set({
+      token: refreshed.token,
+      refresh_token: refreshed.refresh_token,
+      expires_at: refreshed.expires_at,
+    })
+    return refreshed.token
+  }
+  return token
+}
+
+async function clearAuthState() {
+  await chrome.storage.local.remove(['token', 'refresh_token', 'expires_at', 'userProfile'])
 }
 
 // Run on install + service worker wake
@@ -76,12 +145,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       switch (message?.type) {
         case 'AUTO_CONNECT': {
           await autoConnect()
-          const { token } = await chrome.storage.local.get('token')
+          const token = await getValidToken()
           sendResponse({ success: !!token, token })
           return
         }
         case 'SAVE_JOB': {
-          const result = await saveJob(message.data, message.token)
+          // Refresh the access token if it is about to expire so the user
+          // does not get silently logged out after the 1h Supabase TTL.
+          const token = await getValidToken()
+          if (!token) {
+            sendResponse({ success: false, error: 'Authentication required' })
+            return
+          }
+          const result = await saveJob(message.data, token)
           if (result.success && !result.alreadyLiked) {
             scheduleReminder(message.data.title, message.data.company)
           }
@@ -89,7 +165,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           return
         }
         case 'CHECK_AUTH': {
-          const { token } = await chrome.storage.local.get('token')
+          const token = await getValidToken()
           sendResponse({ authenticated: !!token, token })
           return
         }
@@ -99,7 +175,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           return
         }
         case 'LOGOUT': {
-          await chrome.storage.local.remove('token')
+          await clearAuthState()
           sendResponse({ success: true })
           return
         }

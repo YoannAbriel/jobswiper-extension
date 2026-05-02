@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }, 8000)
       if (res.ok) { showLoggedIn(token); return }
     } catch {}
-    await chrome.storage.local.remove('token')
+    try { await callSW({ type: 'LOGOUT' }) } catch {}
   }
 
   showLoggedOut()
@@ -102,7 +102,11 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
     if (res.ok) {
       const data = await res.json()
       if (data.token) {
-        await chrome.storage.local.set({ token: data.token })
+        await chrome.storage.local.set({
+          token: data.token,
+          refresh_token: data.refresh_token || null,
+          expires_at: data.expires_at || null,
+        })
         showLoggedIn(data.token)
         return
       }
@@ -116,9 +120,10 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
   setTimeout(() => { btn.textContent = origText; btn.disabled = false }, 1500)
 })
 
-// Logout
+// Logout: route through the SW so all auth state stays clear in one
+// place (token + refresh_token + expires_at + userProfile).
 document.getElementById('logout-btn')?.addEventListener('click', async () => {
-  await chrome.storage.local.remove('token')
+  try { await callSW({ type: 'LOGOUT' }) } catch {}
   showLoggedOut()
 })
 
@@ -133,7 +138,10 @@ async function loadStats(token) {
     }, 8000)
 
     if (!res.ok) {
-      if (res.status === 401) { await chrome.storage.local.remove('token'); showLoggedOut() }
+      if (res.status === 401) {
+        try { await callSW({ type: 'LOGOUT' }) } catch {}
+        showLoggedOut()
+      }
       return
     }
 
