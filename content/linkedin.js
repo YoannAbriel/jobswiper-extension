@@ -303,7 +303,29 @@ function resetButton(btn) {
 
 let _bar = null
 let _barBtn = null
+let _scoreBadge = null
 let _currentJobUrl = ''
+
+function fetchInlineScore(badge) {
+  chrome.storage.local.get('token', ({ token }) => {
+    if (!token) { badge.remove(); _scoreBadge = null; return }
+    const jobData = extractJobData()
+    fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(jobData),
+    }, 8000).then(r => r.json()).then(data => {
+      const score = data.match_score
+      if (score == null) { badge.remove(); _scoreBadge = null; return }
+      window.JobSwiperMatch.applyMatchBadge(badge, score)
+      window.JobSwiperMatch.attachExplanationPopover(badge, score, data)
+      if (data.already_saved) {
+        _barBtn.className = 'jobswiper-save-btn saved'
+        _barBtn.innerHTML = `${_beamHTML}✓ Saved`
+      }
+    }).catch(() => { badge.remove(); _scoreBadge = null })
+  })
+}
 
 function getOrCreateBar() {
   // If bar already exists in DOM, reuse it
@@ -321,13 +343,22 @@ function getOrCreateBar() {
   resetButton(_barBtn)
   _barBtn.addEventListener('click', () => handleSave(_barBtn))
 
+  _scoreBadge = document.createElement('span')
+  _scoreBadge.className = 'jobswiper-inline-score'
+  _scoreBadge.style.background = '#f4f4f5'
+  _scoreBadge.style.color = '#71717a'
+  _scoreBadge.textContent = '...'
+
   _bar = document.createElement('div')
   _bar.className = 'jobswiper-linkedin-bar'
-  _bar.style.cssText = 'padding: 8px 0 0; display: flex; align-items: center; gap: 10px;'
+  _bar.style.cssText = 'padding: 8px 0 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;'
   _bar.appendChild(_barBtn)
+  _bar.appendChild(_scoreBadge)
 
   // Insert after the top card — below Postuler/Enregistrer, outside React's scope
   topCard.parentElement.insertBefore(_bar, topCard.nextSibling)
+
+  fetchInlineScore(_scoreBadge)
   return _bar
 }
 
@@ -369,6 +400,21 @@ function updateBar() {
 
   // Reset button state for new job
   resetButton(_barBtn)
+
+  // Re-fetch the score for the new job
+  if (_scoreBadge && document.body.contains(_scoreBadge)) {
+    _scoreBadge.textContent = '...'
+    _scoreBadge.style.background = '#f4f4f5'
+    _scoreBadge.style.color = '#71717a'
+    _scoreBadge.style.border = ''
+    _scoreBadge.removeAttribute('title')
+    // Strip any popover handler from the previous job by replacing the node.
+    const fresh = _scoreBadge.cloneNode(false)
+    fresh.textContent = '...'
+    _scoreBadge.replaceWith(fresh)
+    _scoreBadge = fresh
+    fetchInlineScore(_scoreBadge)
+  }
 }
 
 // ============================================================================

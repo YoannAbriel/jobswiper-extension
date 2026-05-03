@@ -277,10 +277,11 @@ function injectDetailButton() {
   // Mark the container so we can find our button later
   _bar = _barBtn
 
-  // Score badge — insert after our button
+  // Score badge — insert after our button (tier styling applied once data arrives)
   const scoreBadge = document.createElement('span')
   scoreBadge.className = 'jobswiper-inline-score'
-  scoreBadge.style.cssText = 'display:inline-flex;align-items:center;padding:5px 10px;border-radius:8px;font-size:12px;font-weight:700;background:#f4f4f5;color:#71717a;font-family:-apple-system,BlinkMacSystemFont,sans-serif;'
+  scoreBadge.style.background = '#f4f4f5'
+  scoreBadge.style.color = '#71717a'
   scoreBadge.textContent = '...'
   _barBtn.after(scoreBadge)
 
@@ -296,9 +297,8 @@ function injectDetailButton() {
       }, 8000).then(r => r.json()).then(result => {
         const score = result.match_score
         if (score == null) { scoreBadge.remove(); return }
-        scoreBadge.textContent = score + '% match'
-        if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
-        else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
+        window.JobSwiperMatch.applyMatchBadge(scoreBadge, score)
+        window.JobSwiperMatch.attachExplanationPopover(scoreBadge, score, result)
         if (result.already_saved) {
           _barBtn.className = 'jobswiper-save-btn saved'
           _barBtn.innerHTML = `${_beamHTML}✓ Saved`

@@ -315,10 +315,11 @@ function getOrCreateBar() {
   resetButton(_barBtn)
   _barBtn.addEventListener('click', () => handleSave(_barBtn))
 
-  // Score badge next to button
+  // Score badge next to button (tier styling applied once data arrives)
   const scoreBadge = document.createElement('span')
   scoreBadge.className = 'jobswiper-inline-score'
-  scoreBadge.style.cssText = 'display:inline-flex;align-items:center;padding:5px 10px;border-radius:8px;font-size:12px;font-weight:700;background:#f4f4f5;color:#71717a;font-family:-apple-system,BlinkMacSystemFont,sans-serif;'
+  scoreBadge.style.background = '#f4f4f5'
+  scoreBadge.style.color = '#71717a'
   scoreBadge.textContent = '...'
 
   _bar = document.createElement('div')
@@ -355,10 +356,8 @@ function getOrCreateBar() {
         const score = data.match_score
         if (score == null) { scoreBadge.remove(); return }
 
-        scoreBadge.textContent = score + '% match'
-        if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
-        else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
-        else { scoreBadge.style.background = '#f4f4f5'; scoreBadge.style.color = '#71717a' }
+        window.JobSwiperMatch.applyMatchBadge(scoreBadge, score)
+        window.JobSwiperMatch.attachExplanationPopover(scoreBadge, score, data)
 
         if (data.already_saved) {
           _barBtn.className = 'jobswiper-save-btn saved'
