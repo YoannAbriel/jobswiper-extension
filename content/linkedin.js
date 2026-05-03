@@ -27,9 +27,26 @@ function _logInjection(outcome, extra) {
       entries.push(entry)
       chrome.storage.local.set({ [_LOG_KEY]: entries.slice(-_LOG_MAX) })
     })
-    // Mirror to console so smoke tests can capture without needing
-    // chrome-extension:// access. Stripped before release if noisy.
     console.log('[jobswiper:log]', JSON.stringify(entry))
+    // Only the terminal 'gave-up' outcome is worth shipping back to the
+    // backend: it means the retry budget was fully exhausted and the user
+    // did not get a save bar on this navigation. Everything else is noise.
+    if (outcome === 'gave-up') _reportInjectionFailure(entry)
+  } catch {}
+}
+
+function _reportInjectionFailure(entry) {
+  try {
+    fetch(`${API_BASE}/api/extension/inject-failure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outcome: entry.outcome,
+        attempts: typeof entry.attempts === 'number' ? entry.attempts : 0,
+        pathname: location.pathname,
+      }),
+      keepalive: true,
+    }).catch(() => {})
   } catch {}
 }
 
