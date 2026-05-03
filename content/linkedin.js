@@ -8,12 +8,19 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
 // YOA-188: bounded ring buffer of injection events stored in chrome.storage.local.
 // Lets future test sessions inspect why an injection failed without depending on
 // verbal reports. Read with: chrome.storage.local.get('jobswiper:linkedin:log').
-const _LOG_KEY = 'jobswiper:linkedin:log'
-const _LOG_MAX = 200
-function _logInjection(outcome, extra) {
+const LOG_KEY = 'jobswiper:linkedin:log'
+const LOG_MAX = 200
+const OUTCOME_GAVE_UP = 'gave-up'
+function logInjection(outcome, extra) {
   try {
     if (!chrome.runtime?.id || !chrome.storage?.local) return
     const entry = {
@@ -22,22 +29,19 @@ function _logInjection(outcome, extra) {
       outcome,
       ...(extra || {}),
     }
-    chrome.storage.local.get(_LOG_KEY, (res) => {
-      const entries = Array.isArray(res[_LOG_KEY]) ? res[_LOG_KEY] : []
+    chrome.storage.local.get(LOG_KEY, (res) => {
+      const entries = Array.isArray(res[LOG_KEY]) ? res[LOG_KEY] : []
       entries.push(entry)
-      chrome.storage.local.set({ [_LOG_KEY]: entries.slice(-_LOG_MAX) })
+      chrome.storage.local.set({ [LOG_KEY]: entries.slice(-LOG_MAX) })
     })
     console.log('[jobswiper:log]', JSON.stringify(entry))
-    // Only the terminal 'gave-up' outcome is worth shipping back to the
-    // backend: it means the retry budget was fully exhausted and the user
-    // did not get a save bar on this navigation. Everything else is noise.
-    if (outcome === 'gave-up') _reportInjectionFailure(entry)
+    if (outcome === OUTCOME_GAVE_UP) reportInjectionFailure(entry)
   } catch {}
 }
 
-function _reportInjectionFailure(entry) {
+function reportInjectionFailure(entry) {
   try {
-    fetch(`${API_BASE}/api/extension/inject-failure`, {
+    fetchWithTimeout(`${API_BASE}/api/extension/inject-failure`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -46,15 +50,8 @@ function _reportInjectionFailure(entry) {
         pathname: location.pathname,
       }),
       keepalive: true,
-    }).catch(() => {})
+    }, 5000).catch(() => {})
   } catch {}
-}
-
-
-function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), timeoutMs)
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
 }
 
 function esc(str) {
@@ -398,7 +395,7 @@ function resetRetry() {
 function scheduleInjectRetry() {
   if (_retryTimer) return
   if (_retryAttempt >= _INJECT_RETRY_DELAYS.length) {
-    _logInjection('gave-up', { attempts: _retryAttempt })
+    logInjection('gave-up', { attempts: _retryAttempt })
     return
   }
   const delay = _INJECT_RETRY_DELAYS[_retryAttempt++]
@@ -414,7 +411,7 @@ function scheduleInjectRetry() {
       return
     }
     if (getOrCreateBar()) {
-      _logInjection('injected-via-retry', { attempt: _retryAttempt })
+      logInjection('injected-via-retry', { attempt: _retryAttempt })
       resetRetry()
       updateBar()
     } else {
@@ -448,7 +445,7 @@ function updateBar() {
   if (!currentId) {
     if (!_bar || !document.body.contains(_bar)) {
       if (!getOrCreateBar()) {
-        _logInjection('no-anchor', { stage: 'no-id' })
+        logInjection('no-anchor', { stage: 'no-id' })
         scheduleInjectRetry()
       }
     }
@@ -462,13 +459,13 @@ function updateBar() {
 
   // Ensure bar exists
   if (!getOrCreateBar()) {
-    _logInjection('no-anchor', { stage: 'have-id', jobId: currentId })
+    logInjection('no-anchor', { stage: 'have-id', jobId: currentId })
     scheduleInjectRetry()
     return
   }
 
   resetRetry()
-  _logInjection('injected', { jobId: currentId })
+  logInjection('injected', { jobId: currentId })
 
   // Reset button state for new job
   resetButton(_barBtn)
@@ -488,7 +485,7 @@ function isJobPage() {
 
 if (!window.__jobswiper_linkedin_loaded) {
   window.__jobswiper_linkedin_loaded = true
-  _logInjection('script-loaded')
+  logInjection('script-loaded')
 
   // Coalesce bursts of mutations + nav events into a single tick.
   // Without the flag, multiple requestAnimationFrame(cb) registrations in
