@@ -8,6 +8,17 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
+// Single source of truth for tier cutoffs lives in the analyze-job API
+// response (`match_level`).
+const _BADGE_COLORS = {
+  strong: { bg: '#d1fae5', fg: '#065f46' },
+  good: { bg: '#fef3c7', fg: '#92400e' },
+  possible: { bg: '#fef3c7', fg: '#92400e' },
+  low: { bg: '#f4f4f5', fg: '#71717a' },
+}
+function badgeColors(matchLevel) {
+  return _BADGE_COLORS[matchLevel] || _BADGE_COLORS.low
+}
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()
@@ -356,9 +367,9 @@ function getOrCreateBar() {
         if (score == null) { scoreBadge.remove(); return }
 
         scoreBadge.textContent = score + '% match'
-        if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
-        else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
-        else { scoreBadge.style.background = '#f4f4f5'; scoreBadge.style.color = '#71717a' }
+        const colors = badgeColors(data.match_level)
+        scoreBadge.style.background = colors.bg
+        scoreBadge.style.color = colors.fg
 
         if (data.already_saved) {
           _barBtn.className = 'jobswiper-save-btn saved'
