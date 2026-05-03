@@ -8,6 +8,31 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
+// YOA-188: bounded ring buffer of injection events stored in chrome.storage.local.
+// Lets future test sessions inspect why an injection failed without depending on
+// verbal reports. Read with: chrome.storage.local.get('jobswiper:linkedin:log').
+const _LOG_KEY = 'jobswiper:linkedin:log'
+const _LOG_MAX = 200
+function _logInjection(outcome, extra) {
+  try {
+    if (!chrome.runtime?.id || !chrome.storage?.local) return
+    const entry = {
+      ts: Date.now(),
+      url: location.pathname + location.search,
+      outcome,
+      ...(extra || {}),
+    }
+    chrome.storage.local.get(_LOG_KEY, (res) => {
+      const entries = Array.isArray(res[_LOG_KEY]) ? res[_LOG_KEY] : []
+      entries.push(entry)
+      chrome.storage.local.set({ [_LOG_KEY]: entries.slice(-_LOG_MAX) })
+    })
+    // Mirror to console so smoke tests can capture without needing
+    // chrome-extension:// access. Stripped before release if noisy.
+    console.log('[jobswiper:log]', JSON.stringify(entry))
+  } catch {}
+}
+
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()
@@ -305,15 +330,24 @@ let _bar = null
 let _barBtn = null
 let _currentJobUrl = ''
 
+// LinkedIn renames classes regularly (often with hash suffixes). Order: known
+// stable names first, then substring-tolerant fallbacks. Returns null if none
+// match, in which case the caller schedules a backoff retry.
+function findTopCardAnchor() {
+  return (
+    document.querySelector('.job-details-jobs-unified-top-card__container--two-pane') ||
+    document.querySelector('.jobs-unified-top-card__content--two-pane') ||
+    document.querySelector('[class*="job-details-jobs-unified-top-card__container"]') ||
+    document.querySelector('[class*="jobs-unified-top-card"][class*="two-pane"]') ||
+    document.querySelector('.job-view-layout [class*="top-card"]')
+  )
+}
+
 function getOrCreateBar() {
   // If bar already exists in DOM, reuse it
   if (_bar && document.body.contains(_bar)) return _bar
 
-  // Find the top card container — our bar goes right after it
-  // This element is stable (React replaces its children, not the container itself)
-  const topCard = document.querySelector('.job-details-jobs-unified-top-card__container--two-pane')
-    || document.querySelector('.jobs-unified-top-card__content--two-pane')
-
+  const topCard = findTopCardAnchor()
   if (!topCard) return null
 
   _barBtn = document.createElement('button')
@@ -329,6 +363,47 @@ function getOrCreateBar() {
   // Insert after the top card — below Postuler/Enregistrer, outside React's scope
   topCard.parentElement.insertBefore(_bar, topCard.nextSibling)
   return _bar
+}
+
+// YOA-188: when the anchor is briefly missing right after a navigation, the
+// 1.5s polling tick is too slow. Retry on a tighter exponential backoff and
+// abandon after the last delay so we don't loop forever on a non-job page.
+const _INJECT_RETRY_DELAYS = [200, 500, 1000, 2000, 4000]
+let _retryAttempt = 0
+let _retryTimer = null
+function resetRetry() {
+  _retryAttempt = 0
+  if (_retryTimer) {
+    clearTimeout(_retryTimer)
+    _retryTimer = null
+  }
+}
+function scheduleInjectRetry() {
+  if (_retryTimer) return
+  if (_retryAttempt >= _INJECT_RETRY_DELAYS.length) {
+    _logInjection('gave-up', { attempts: _retryAttempt })
+    return
+  }
+  const delay = _INJECT_RETRY_DELAYS[_retryAttempt++]
+  _retryTimer = setTimeout(() => {
+    _retryTimer = null
+    if (!chrome.runtime?.id) return
+    if (!isJobPage()) {
+      resetRetry()
+      return
+    }
+    if (_bar && document.body.contains(_bar)) {
+      resetRetry()
+      return
+    }
+    if (getOrCreateBar()) {
+      _logInjection('injected-via-retry', { attempt: _retryAttempt })
+      resetRetry()
+      updateBar()
+    } else {
+      scheduleInjectRetry()
+    }
+  }, delay)
 }
 
 function getLinkedInJobId() {
@@ -354,8 +429,12 @@ function updateBar() {
 
   // Can't identify job — don't touch anything (avoids resetting "Saved!" state)
   if (!currentId) {
-    // Still ensure bar exists
-    if (!_bar || !document.body.contains(_bar)) getOrCreateBar()
+    if (!_bar || !document.body.contains(_bar)) {
+      if (!getOrCreateBar()) {
+        _logInjection('no-anchor', { stage: 'no-id' })
+        scheduleInjectRetry()
+      }
+    }
     return
   }
 
@@ -365,7 +444,14 @@ function updateBar() {
   _currentJobUrl = currentId
 
   // Ensure bar exists
-  if (!getOrCreateBar()) return
+  if (!getOrCreateBar()) {
+    _logInjection('no-anchor', { stage: 'have-id', jobId: currentId })
+    scheduleInjectRetry()
+    return
+  }
+
+  resetRetry()
+  _logInjection('injected', { jobId: currentId })
 
   // Reset button state for new job
   resetButton(_barBtn)
@@ -385,6 +471,7 @@ function isJobPage() {
 
 if (!window.__jobswiper_linkedin_loaded) {
   window.__jobswiper_linkedin_loaded = true
+  _logInjection('script-loaded')
 
   // Coalesce bursts of mutations + nav events into a single tick.
   // Without the flag, multiple requestAnimationFrame(cb) registrations in
@@ -406,6 +493,7 @@ if (!window.__jobswiper_linkedin_loaded) {
           _bar.remove()
           _bar = null
           _currentJobUrl = ''
+          resetRetry()
         }
       } catch {
         // Extension context invalidated mid-tick
@@ -415,16 +503,23 @@ if (!window.__jobswiper_linkedin_loaded) {
     else requestAnimationFrame(run)
   }
 
+  // Each fresh navigation gets its own retry budget; otherwise an SPA hop
+  // would inherit the previous URL's exhausted attempt count.
+  function onNavSignal() {
+    resetRetry()
+    scheduleUpdate()
+  }
+
   // The MAIN-world script (linkedin-main.js) patches history.pushState
   // there and dispatches this event. Patching from the isolated world is a
   // no-op because each world has its own window.history copy.
-  window.addEventListener('jobswiper:locationchange', scheduleUpdate)
+  window.addEventListener('jobswiper:locationchange', onNavSignal)
 
   // Background relay (chrome.webNavigation.onHistoryStateUpdated): a
   // belt-and-braces second source of nav signals.
   try {
     chrome.runtime.onMessage.addListener((msg) => {
-      if (msg?.type === 'LINKEDIN_NAV') scheduleUpdate()
+      if (msg?.type === 'LINKEDIN_NAV') onNavSignal()
     })
   } catch {
     // Extension context invalidated
