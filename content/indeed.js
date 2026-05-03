@@ -9,8 +9,22 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
-
-
+// YOA-230: read tier from the analyze-job API response (`match_level` field)
+// instead of re-deriving locally. Single source of truth for cutoffs lives
+// server-side. The 'possible' API level (45..59) maps to the 'good' CSS class
+// because the overlay stylesheet only has 3 buckets.
+const _BADGE_COLORS = {
+  strong: { bg: '#d1fae5', fg: '#065f46' },
+  good: { bg: '#fef3c7', fg: '#92400e' },
+  possible: { bg: '#fef3c7', fg: '#92400e' },
+  low: { bg: '#f4f4f5', fg: '#71717a' },
+}
+function badgeColors(matchLevel) {
+  return _BADGE_COLORS[matchLevel] || _BADGE_COLORS.low
+}
+function tierClass(matchLevel) {
+  return matchLevel === 'possible' ? 'good' : (matchLevel || 'low')
+}
 
 function esc(str) {
   const d = document.createElement('div')
@@ -285,9 +299,8 @@ async function showAnalysisPanel() {
     }
 
     // Match score
-    const level = data.match_score >= 80 ? 'strong' : data.match_score >= 60 ? 'good' : 'low'
     body.innerHTML += `
-      <div class="jobswiper-score ${level}">
+      <div class="jobswiper-score ${tierClass(data.match_level)}">
         <div>
           <div class="jobswiper-score-num">${data.match_score}%</div>
         </div>
@@ -434,9 +447,9 @@ function injectButton() {
       if (score == null) { scoreBadge.remove(); return }
 
       scoreBadge.textContent = score + '% match'
-      if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
-      else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
-      else { scoreBadge.style.background = '#f4f4f5'; scoreBadge.style.color = '#71717a' }
+      const colors = badgeColors(data.match_level)
+      scoreBadge.style.background = colors.bg
+      scoreBadge.style.color = colors.fg
 
       if (data.already_saved) {
         btn.className = 'jobswiper-save-btn saved'
@@ -508,8 +521,9 @@ async function _doInjectBadges() {
           const data = await res.json()
           const score = data.match_score
           if (score == null) { badge.remove(); return }
-          if (score >= 80) { badge.style.background = '#d1fae5'; badge.style.color = '#065f46' }
-          else if (score >= 60) { badge.style.background = '#fef3c7'; badge.style.color = '#92400e' }
+          const colors = badgeColors(data.match_level)
+          badge.style.background = colors.bg
+          badge.style.color = colors.fg
           badge.textContent = score + '%'
           if (data.already_saved) {
             badge.textContent = '✓ ' + score + '%'
