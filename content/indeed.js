@@ -9,10 +9,9 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
-// YOA-230: read tier from the analyze-job API response (`match_level` field)
-// instead of re-deriving locally. Single source of truth for cutoffs lives
-// server-side. The 'possible' API level (45..59) maps to the 'good' CSS class
-// because the overlay stylesheet only has 3 buckets.
+// Single source of truth for tier cutoffs lives in the analyze-job API
+// response (`match_level`). The 'possible' API level (45..59) maps to the
+// 'good' CSS class because the overlay stylesheet only has 3 buckets.
 const _BADGE_COLORS = {
   strong: { bg: '#d1fae5', fg: '#065f46' },
   good: { bg: '#fef3c7', fg: '#92400e' },
