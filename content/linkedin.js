@@ -216,6 +216,25 @@ function showToast(msg, link) {
   setTimeout(() => toast.remove(), 4000)
 }
 
+// YOA-217: headless equivalent of handleSave for the post-install auto-import
+// flow. No UI side effects, no retry button, no toast. Just extract -> SAVE_JOB.
+async function autoImportCurrentJob() {
+  const jobData = extractJobData()
+  if (!jobData.title || !jobData.company) {
+    return { success: false, error: 'No job data on this page' }
+  }
+  let { token } = await chrome.storage.local.get('token')
+  if (!token) {
+    try {
+      await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+      const result = await chrome.storage.local.get('token')
+      token = result.token
+    } catch {}
+  }
+  if (!token) return { success: false, error: 'Not authenticated' }
+  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
+}
+
 async function handleSave(btn, retryCount = 0) {
   btn.innerHTML = '<div class="spinner"></div> Saving...'
   btn.disabled = true
@@ -469,8 +488,16 @@ if (!window.__jobswiper_linkedin_loaded) {
   // Background relay (chrome.webNavigation.onHistoryStateUpdated): a
   // belt-and-braces second source of nav signals.
   try {
-    chrome.runtime.onMessage.addListener((msg) => {
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg?.type === 'LINKEDIN_NAV') scheduleUpdate()
+      // YOA-217: post-install auto-import. Background SW asks the active tab to
+      // grab the visible job and fire the same SAVE_JOB path the user button uses.
+      if (msg?.type === 'AUTO_IMPORT_CURRENT_JOB') {
+        autoImportCurrentJob().then(sendResponse).catch((err) =>
+          sendResponse({ success: false, error: err?.message || 'Auto-import failed' })
+        )
+        return true
+      }
     })
   } catch {
     // Extension context invalidated

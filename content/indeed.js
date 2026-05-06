@@ -145,6 +145,35 @@ function showToast(msg, link) {
   setTimeout(() => toast.remove(), 4000)
 }
 
+// YOA-217: headless auto-import for post-install flow.
+async function autoImportCurrentJob() {
+  const jobData = extractJobData()
+  if (!jobData.title || !jobData.company) {
+    return { success: false, error: 'No job data on this page' }
+  }
+  let { token } = await chrome.storage.local.get('token')
+  if (!token) {
+    try {
+      await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+      const result = await chrome.storage.local.get('token')
+      token = result.token
+    } catch {}
+  }
+  if (!token) return { success: false, error: 'Not authenticated' }
+  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
+}
+
+try {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'AUTO_IMPORT_CURRENT_JOB') {
+      autoImportCurrentJob().then(sendResponse).catch((err) =>
+        sendResponse({ success: false, error: err?.message || 'Auto-import failed' })
+      )
+      return true
+    }
+  })
+} catch {}
+
 async function handleSave(btn, retryCount = 0) {
   btn.innerHTML = '<div class="spinner"></div> Saving...'
   btn.disabled = true

@@ -138,7 +138,70 @@ async function clearAuthState() {
 
 // Run on install + service worker wake
 autoConnect()
-chrome.runtime.onInstalled.addListener(() => autoConnect())
+
+// Job sites the content scripts inject into. URL pattern only — used to decide
+// whether the active tab is auto-importable on first install.
+const SUPPORTED_JOB_HOST_REGEX = /(linkedin\.com\/(?:comm\/)?jobs\/|indeed\.com\/|wttj\.co|welcometothejungle\.com|jobup\.ch|jobs\.ch)/i
+
+function isSupportedJobSite(url) {
+  if (!url) return false
+  try { return SUPPORTED_JOB_HOST_REGEX.test(url) } catch { return false }
+}
+
+// YOA-217: when the dashboard tab is open, broadcast import events into it
+// so it can refresh its sidebar counts + show a toast without a manual reload.
+async function broadcastJobImported(payload) {
+  try {
+    const tabs = await chrome.tabs.query({ url: ['https://jobswiper.ai/*', 'https://www.jobswiper.ai/*'] })
+    for (const tab of tabs) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: (p) => {
+            window.postMessage({ source: 'jobswiper-extension', type: 'JOBSWIPER_JOB_IMPORTED', payload: p }, '*')
+          },
+          args: [payload],
+        })
+      } catch {}
+    }
+  } catch {}
+}
+
+chrome.runtime.onInstalled.addListener(async (details) => {
+  await autoConnect()
+
+  // Updates and reloads should not re-trigger the welcome flow.
+  if (details?.reason !== 'install') return
+
+  // Open the dashboard so the user has a place to land. The query string is a
+  // hint for the dashboard to surface a "welcome, extension active" toast.
+  try {
+    await chrome.tabs.create({ url: `${API_BASE}/dashboard/search?welcome=extension` })
+  } catch {}
+
+  // If the active tab is already a job page, ask its content script to import
+  // the visible job. Fails silently if the user isn't logged in yet.
+  try {
+    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+    if (active && isSupportedJobSite(active.url)) {
+      try {
+        await chrome.tabs.sendMessage(active.id, { type: 'AUTO_IMPORT_CURRENT_JOB' })
+      } catch {}
+    }
+  } catch {}
+
+  // Friendly system notification so the user has visible confirmation that
+  // the extension is alive even if they're not on a job site yet.
+  try {
+    chrome.notifications.create('jobswiper-installed', {
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'JobSwiper installed',
+      message: "Open any job on LinkedIn, Indeed, or JobUp and it'll save automatically.",
+      priority: 1,
+    })
+  } catch {}
+})
 
 // Relay LinkedIn SPA navigation events to the content script so it can re-render
 // the save bar instantly instead of waiting for the polling tick.
@@ -175,6 +238,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           const result = await saveJob(message.data, token)
           if (result.success && !result.alreadyLiked) {
             scheduleReminder(message.data.title, message.data.company)
+          }
+          if (result.success) {
+            // YOA-217: live-update the dashboard tab if open.
+            broadcastJobImported({
+              jobId: result.jobId,
+              likedJobId: result.likedJobId,
+              title: message.data.title,
+              company: message.data.company,
+              alreadyLiked: !!result.alreadyLiked,
+            })
           }
           sendResponse(result)
           return
