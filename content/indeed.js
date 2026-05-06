@@ -145,6 +145,35 @@ function showToast(msg, link) {
   setTimeout(() => toast.remove(), 4000)
 }
 
+// YOA-217: headless auto-import for post-install flow.
+async function autoImportCurrentJob() {
+  const jobData = extractJobData()
+  if (!jobData.title || !jobData.company) {
+    return { success: false, error: 'No job data on this page' }
+  }
+  let { token } = await chrome.storage.local.get('token')
+  if (!token) {
+    try {
+      await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
+      const result = await chrome.storage.local.get('token')
+      token = result.token
+    } catch {}
+  }
+  if (!token) return { success: false, error: 'Not authenticated' }
+  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
+}
+
+try {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type === 'AUTO_IMPORT_CURRENT_JOB') {
+      autoImportCurrentJob().then(sendResponse).catch((err) =>
+        sendResponse({ success: false, error: err?.message || 'Auto-import failed' })
+      )
+      return true
+    }
+  })
+} catch {}
+
 async function handleSave(btn, retryCount = 0) {
   btn.innerHTML = '<div class="spinner"></div> Saving...'
   btn.disabled = true
@@ -284,15 +313,18 @@ async function showAnalysisPanel() {
       body.innerHTML += `<div class="jobswiper-already-saved">✓ Already saved to your pipeline</div>`
     }
 
-    // Match score
-    const level = data.match_score >= 80 ? 'strong' : data.match_score >= 60 ? 'good' : 'low'
+    // Match score (panel uses tier-class for legacy CSS hooks)
+    const tier = window.JobSwiperMatch.getMatchTier(data.match_score)
+    const tierClass = tier.tier === 'strong' ? 'strong'
+      : tier.tier === 'moderate' ? 'good'
+      : 'low'
     body.innerHTML += `
-      <div class="jobswiper-score ${level}">
+      <div class="jobswiper-score ${tierClass}">
         <div>
           <div class="jobswiper-score-num">${data.match_score}%</div>
         </div>
         <div>
-          <div class="jobswiper-score-label">${data.match_level} match</div>
+          <div class="jobswiper-score-label">${tier.label}</div>
           <div style="font-size:11px;color:#71717a;margin-top:2px">${data.matched_skills?.length || 0}/${data.keywords?.length || 0} skills matched</div>
         </div>
       </div>
@@ -402,10 +434,11 @@ function injectButton() {
     document.querySelector('#job_header') ||
     document.querySelector('h1')?.parentElement
 
-  // Score badge next to button
+  // Score badge next to button (tier styling applied once data arrives)
   const scoreBadge = document.createElement('span')
   scoreBadge.className = 'jobswiper-inline-score'
-  scoreBadge.style.cssText = 'display:inline-flex;align-items:center;padding:5px 10px;border-radius:8px;font-size:12px;font-weight:700;background:#f4f4f5;color:#71717a;font-family:-apple-system,BlinkMacSystemFont,sans-serif;'
+  scoreBadge.style.background = '#f4f4f5'
+  scoreBadge.style.color = '#71717a'
   scoreBadge.textContent = '...'
 
   if (actionBar) {
@@ -433,10 +466,8 @@ function injectButton() {
       const score = data.match_score
       if (score == null) { scoreBadge.remove(); return }
 
-      scoreBadge.textContent = score + '% match'
-      if (score >= 80) { scoreBadge.style.background = '#d1fae5'; scoreBadge.style.color = '#065f46' }
-      else if (score >= 60) { scoreBadge.style.background = '#fef3c7'; scoreBadge.style.color = '#92400e' }
-      else { scoreBadge.style.background = '#f4f4f5'; scoreBadge.style.color = '#71717a' }
+      window.JobSwiperMatch.applyMatchBadge(scoreBadge, score)
+      window.JobSwiperMatch.attachExplanationPopover(scoreBadge, score, data)
 
       if (data.already_saved) {
         btn.className = 'jobswiper-save-btn saved'
@@ -508,12 +539,12 @@ async function _doInjectBadges() {
           const data = await res.json()
           const score = data.match_score
           if (score == null) { badge.remove(); return }
-          if (score >= 80) { badge.style.background = '#d1fae5'; badge.style.color = '#065f46' }
-          else if (score >= 60) { badge.style.background = '#fef3c7'; badge.style.color = '#92400e' }
+          const tier = window.JobSwiperMatch.getMatchTier(score)
+          badge.style.background = tier.bg
+          badge.style.color = tier.fg
           badge.textContent = score + '%'
           if (data.already_saved) {
             badge.textContent = '✓ ' + score + '%'
-            badge.style.background = '#dbeafe'; badge.style.color = '#1e40af'
           }
         }
       } catch { badge.remove() }
