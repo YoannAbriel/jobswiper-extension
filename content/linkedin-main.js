@@ -14,6 +14,18 @@
   if (window.__jobswiper_main_loaded) return
   window.__jobswiper_main_loaded = true
 
+  // YOA-238 follow-up: LinkedIn renders the job detail panel inside closed
+  // Shadow DOM on SPA-navigated pages, making document.querySelector unable
+  // to find the anchor. Force all shadow roots to be open so the isolated
+  // content script can traverse them. Runs at document_start in MAIN world
+  // so it applies before LinkedIn's bundle attaches any shadow roots.
+  try {
+    const originalAttachShadow = Element.prototype.attachShadow
+    Element.prototype.attachShadow = function (init) {
+      return originalAttachShadow.call(this, { ...(init || {}), mode: 'open' })
+    }
+  } catch {}
+
   const EVENT = 'jobswiper:locationchange'
   const dispatch = () => {
     try { window.dispatchEvent(new CustomEvent(EVENT)) } catch {}

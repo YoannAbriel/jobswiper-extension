@@ -203,13 +203,47 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   } catch {}
 })
 
-// Relay LinkedIn SPA navigation events to the content script so it can re-render
-// the save bar instantly instead of waiting for the polling tick.
+// YOA-238: SPA navigation INTO /jobs/ from a non-/jobs/ origin (feed, profile,
+// search) does not re-trigger manifest content_scripts, so the save bar never
+// appears until a hard refresh. On every history state update matching /jobs/,
+// probe whether the content script is already loaded and inject it on miss.
+// The sentinels in linkedin.js + linkedin-main.js make injection idempotent.
 if (chrome.webNavigation?.onHistoryStateUpdated) {
   chrome.webNavigation.onHistoryStateUpdated.addListener(
-    (details) => {
+    async (details) => {
       if (details.frameId !== 0) return
-      chrome.tabs.sendMessage(details.tabId, { type: 'LINKEDIN_NAV', url: details.url }).catch(() => {})
+      const tabId = details.tabId
+
+      let alreadyLoaded = false
+      try {
+        const [res] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: () => !!window.__jobswiper_linkedin_loaded,
+        })
+        alreadyLoaded = !!res?.result
+      } catch {
+        return
+      }
+
+      if (!alreadyLoaded) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['utils/match.js', 'content/linkedin.js'],
+          })
+          await chrome.scripting.insertCSS({
+            target: { tabId },
+            files: ['content/jobswiper.css', 'content/overlay.css'],
+          })
+          await chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['content/linkedin-main.js'],
+            world: 'MAIN',
+          })
+        } catch {}
+      }
+
+      chrome.tabs.sendMessage(tabId, { type: 'LINKEDIN_NAV', url: details.url }).catch(() => {})
     },
     { url: [{ hostSuffix: 'linkedin.com', pathPrefix: '/jobs/' }, { hostSuffix: 'linkedin.com', pathPrefix: '/comm/jobs/' }] },
   )

@@ -346,14 +346,30 @@ function fetchInlineScore(badge) {
   })
 }
 
+// YOA-238 follow-up: LinkedIn renders job detail in (now open thanks to
+// linkedin-main.js patch) shadow roots. document.querySelector does not pierce
+// shadow boundaries, so we recurse manually.
+function deepQuery(selector, root) {
+  root = root || document
+  const direct = root.querySelector(selector)
+  if (direct) return direct
+  for (const el of root.querySelectorAll('*')) {
+    if (el.shadowRoot) {
+      const found = deepQuery(selector, el.shadowRoot)
+      if (found) return found
+    }
+  }
+  return null
+}
+
 function getOrCreateBar() {
   // If bar already exists in DOM, reuse it
   if (_bar && document.body.contains(_bar)) return _bar
 
   // Find the top card container — our bar goes right after it
   // This element is stable (React replaces its children, not the container itself)
-  const topCard = document.querySelector('.job-details-jobs-unified-top-card__container--two-pane')
-    || document.querySelector('.jobs-unified-top-card__content--two-pane')
+  const topCard = deepQuery('.job-details-jobs-unified-top-card__container--two-pane')
+    || deepQuery('.jobs-unified-top-card__content--two-pane')
 
   if (!topCard) return null
 
@@ -522,4 +538,36 @@ if (!window.__jobswiper_linkedin_loaded) {
 
   // Safety net for cases all signals miss (very rare).
   setInterval(scheduleUpdate, 1500)
+
+  // YOA-238 follow-up: on cold load or SPA nav, the attachShadow patch in
+  // linkedin-main.js can be too late if LinkedIn's bundle already attached
+  // closed shadow roots. Detect this state and force a one-time reload, after
+  // which the patch runs at document_start before LinkedIn's bundle and the
+  // anchor becomes reachable.
+  let _reloadAttempts = 0
+  const _reloadTimer = setInterval(() => {
+    if (!chrome.runtime?.id) { clearInterval(_reloadTimer); return }
+    try {
+      if (window.sessionStorage.getItem('__jobswiper_reload_done') === '1') {
+        clearInterval(_reloadTimer)
+        return
+      }
+      if (_bar && document.body.contains(_bar)) {
+        window.sessionStorage.setItem('__jobswiper_reload_done', '1')
+        clearInterval(_reloadTimer)
+        return
+      }
+      const hasJob = !!new URLSearchParams(location.search).get('currentJobId')
+        || /\/jobs\/view\/\d+/.test(location.pathname)
+      if (!hasJob) return
+      _reloadAttempts++
+      if (_reloadAttempts >= 6) {
+        clearInterval(_reloadTimer)
+        window.sessionStorage.setItem('__jobswiper_reload_done', '1')
+        location.reload()
+      }
+    } catch {
+      clearInterval(_reloadTimer)
+    }
+  }, 1500)
 }
