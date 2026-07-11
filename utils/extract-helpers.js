@@ -13,7 +13,13 @@
   }
 
   const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g
-  const PHONE_RE = /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{1,4}\)?[\s.-]?)?\d{2,4}(?:[\s.-]?\d{2,4}){2,4}/g
+  // Phone-shaped only: either an international +-prefixed run, or a national number
+  // that STARTS with ( or 0 and is written as 3+ groups joined by a real space/dot/dash.
+  // Groups are capped at 4 digits, and every separator is mandatory, so pure digit runs
+  // (reference numbers like 2026071012345) and 5+ digit groups (salaries like 60000-75000)
+  // never look like a phone. Bounded quantifiers only (no catastrophic backtracking).
+  const PHONE_RE =
+    /(?:\+\d{1,4}(?:[\s.-]\d{1,4}){2,6})|(?:(?:\(\d{2,4}\)|0\d{0,3})(?:[\s.-]\d{2,4}){2,5})/g
   const PROFILE_URL_RE = /https?:\/\/[^\s]*linkedin\.com\/in\/[^\s]*/gi
 
   function stripPII(text) {

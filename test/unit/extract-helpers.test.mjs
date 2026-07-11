@@ -28,3 +28,24 @@ test('stripPII removes emails, phones, profile urls', () => {
   assert.ok(!out.includes('06 52 05 59 47'))
   assert.ok(!out.includes('linkedin.com/in/'))
 })
+
+test('stripPII strips real phone numbers (all shapes)', () => {
+  for (const phone of ['+41 78 605 70 60', '06 52 05 59 47', '+33 6 52 05 59 47', '(415) 555-2671']) {
+    const out = stripPII(`Call me at ${phone} today`)
+    assert.ok(!out.includes(phone), `expected "${phone}" to be stripped, got: ${out}`)
+    assert.ok(out.includes('[phone]'), `expected [phone] token for "${phone}", got: ${out}`)
+  }
+})
+
+test('stripPII preserves salary ranges and reference numbers verbatim', () => {
+  const preserved = [
+    '60000-75000 EUR',
+    'Salary range 60000-75000 EUR annually',
+    'Ref number 2026071012345',
+    '5+ years',
+    '60-75k EUR',
+  ]
+  for (const text of preserved) {
+    assert.equal(stripPII(text), text, `expected "${text}" untouched, got: ${stripPII(text)}`)
+  }
+})
