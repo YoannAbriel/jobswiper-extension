@@ -321,6 +321,29 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           sendResponse({ success: true })
           return
         }
+        case 'PARSE_JOB_PAGE': {
+          // AI extraction fallback: slower than a save, so a 20s timeout.
+          // On a non-ok HTTP response we forward the server's JSON body
+          // (which carries { success: false, error }) rather than throwing,
+          // so the caller sees the real server-side reason.
+          const token = await getValidToken()
+          if (!token) {
+            sendResponse({ success: false, error: 'Not authenticated' })
+            return
+          }
+          const response = await fetchWithTimeout(
+            `${API_BASE}/api/extension/parse-job-page`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ page_text: message.pageText, url: message.url }),
+            },
+            20000,
+          )
+          const json = await response.json()
+          sendResponse(json)
+          return
+        }
         default:
           sendResponse({ success: false, error: 'Unknown message type' })
       }
