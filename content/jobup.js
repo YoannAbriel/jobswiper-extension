@@ -200,8 +200,14 @@ function showToast(msg, link) {
 // YOA-217: headless auto-import for post-install flow.
 async function autoImportCurrentJob() {
   const jobData = extractJobData()
-  if (!jobData.title || !jobData.company) {
-    return { success: false, error: 'No job data on this page' }
+  let effectiveJob = jobData
+  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
+    effectiveJob = await aiExtractFallback('jobup')
+    if (!effectiveJob) {
+      return { success: false, error: 'No job data on this page' }
+    }
+  } else {
+    effectiveJob.extraction_method = 'dom'
   }
   let { token } = await chrome.storage.local.get('token')
   if (!token) {
@@ -212,7 +218,7 @@ async function autoImportCurrentJob() {
     } catch {}
   }
   if (!token) return { success: false, error: 'Not authenticated' }
-  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
+  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
 }
 
 try {
@@ -226,15 +232,41 @@ try {
   })
 } catch {}
 
+// Stage 3: AI net. Returns a plausible jobData or null.
+async function aiExtractFallback(sourceName) {
+  const pageText = window.JobSwiperExtract.collectPageText(15000)
+  if (pageText.length < 200) return null
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: 'PARSE_JOB_PAGE',
+      pageText,
+      url: window.location.href,
+    })
+    if (!res?.success || !res.job) return null
+    const job = { ...res.job, source: sourceName, extraction_method: 'ai' }
+    if (!job.url) job.url = window.location.href
+    return window.JobSwiperExtract.isPlausibleJob(job) ? job : null
+  } catch {
+    return null
+  }
+}
+
 async function handleSave(btn, retryCount = 0) {
   btn.innerHTML = '<div class="spinner"></div> Saving...'
   btn.disabled = true
 
   const jobData = extractJobData()
-  if (!jobData.title || !jobData.company) {
-    btn.innerHTML = '⚠️ Could not extract job'
-    setTimeout(() => resetButton(btn), 2000)
-    return
+  let effectiveJob = jobData
+  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
+    btn.innerHTML = '<div class="spinner"></div> Smart extraction...'
+    effectiveJob = await aiExtractFallback('jobup')
+    if (!effectiveJob) {
+      btn.innerHTML = '⚠️ Could not extract, open the job page and retry'
+      setTimeout(() => resetButton(btn), 3000)
+      return
+    }
+  } else {
+    effectiveJob.extraction_method = 'dom'
   }
 
   try {
@@ -257,7 +289,7 @@ async function handleSave(btn, retryCount = 0) {
     }
 
     // Use background worker for cross-origin requests (Manifest V3 requirement)
-    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
+    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'

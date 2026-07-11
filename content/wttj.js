@@ -152,8 +152,14 @@ function showToast(msg, link) {
 // YOA-217: headless auto-import for post-install flow.
 async function autoImportCurrentJob() {
   const jobData = extractJobData()
-  if (!jobData.title || !jobData.company) {
-    return { success: false, error: 'No job data on this page' }
+  let effectiveJob = jobData
+  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
+    effectiveJob = await aiExtractFallback('wttj')
+    if (!effectiveJob) {
+      return { success: false, error: 'No job data on this page' }
+    }
+  } else {
+    effectiveJob.extraction_method = 'dom'
   }
   let { token } = await chrome.storage.local.get('token')
   if (!token) {
@@ -164,7 +170,7 @@ async function autoImportCurrentJob() {
     } catch {}
   }
   if (!token) return { success: false, error: 'Not authenticated' }
-  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
+  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
 }
 
 try {
@@ -178,15 +184,41 @@ try {
   })
 } catch {}
 
+// Stage 3: AI net. Returns a plausible jobData or null.
+async function aiExtractFallback(sourceName) {
+  const pageText = window.JobSwiperExtract.collectPageText(15000)
+  if (pageText.length < 200) return null
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: 'PARSE_JOB_PAGE',
+      pageText,
+      url: window.location.href,
+    })
+    if (!res?.success || !res.job) return null
+    const job = { ...res.job, source: sourceName, extraction_method: 'ai' }
+    if (!job.url) job.url = window.location.href
+    return window.JobSwiperExtract.isPlausibleJob(job) ? job : null
+  } catch {
+    return null
+  }
+}
+
 async function handleSave(btn, jobDataOverride, retryCount = 0) {
   btn.innerHTML = '<div class="spinner"></div> Saving...'
   btn.disabled = true
 
   const jobData = jobDataOverride || extractJobData()
-  if (!jobData.title || !jobData.company) {
-    btn.innerHTML = '⚠️ Could not extract job'
-    setTimeout(() => resetButton(btn), 2000)
-    return
+  let effectiveJob = jobData
+  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
+    btn.innerHTML = '<div class="spinner"></div> Smart extraction...'
+    effectiveJob = await aiExtractFallback('wttj')
+    if (!effectiveJob) {
+      btn.innerHTML = '⚠️ Could not extract, open the job page and retry'
+      setTimeout(() => resetButton(btn), 3000)
+      return
+    }
+  } else if (!effectiveJob.extraction_method) {
+    effectiveJob.extraction_method = 'dom'
   }
 
   try {
@@ -207,7 +239,7 @@ async function handleSave(btn, jobDataOverride, retryCount = 0) {
       return
     }
 
-    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
+    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
@@ -222,7 +254,7 @@ async function handleSave(btn, jobDataOverride, retryCount = 0) {
       try {
         await chrome.runtime.sendMessage({ type: 'AUTO_CONNECT' })
         const result = await chrome.storage.local.get('token')
-        if (result.token) return handleSave(btn, jobData, retryCount + 1)
+        if (result.token) return handleSave(btn, effectiveJob, retryCount + 1)
       } catch {}
       btn.innerHTML = '🔒 Reconnect in popup'
       setTimeout(() => resetButton(btn), 3000)
@@ -231,7 +263,7 @@ async function handleSave(btn, jobDataOverride, retryCount = 0) {
 
     if (response && !response.success && retryCount < 1) {
       await new Promise(r => setTimeout(r, 1000))
-      return handleSave(btn, jobData, retryCount + 1)
+      return handleSave(btn, effectiveJob, retryCount + 1)
     }
 
     btn.innerHTML = '❌ ' + esc(response?.error || 'Failed')
@@ -239,7 +271,7 @@ async function handleSave(btn, jobDataOverride, retryCount = 0) {
   } catch (err) {
     if (retryCount < 1) {
       await new Promise(r => setTimeout(r, 1000))
-      return handleSave(btn, jobData, retryCount + 1)
+      return handleSave(btn, effectiveJob, retryCount + 1)
     }
     btn.innerHTML = '❌ ' + esc(err.message || 'Error')
     showToast('Error: ' + (err.message || 'Could not connect to JobSwiper'))
