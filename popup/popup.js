@@ -211,21 +211,11 @@ function plausibilityScore(text) {
   return JOB_SIGNALS.reduce((s, re) => s + (re.test(text) ? 1 : 0), 0)
 }
 
-// Mirrors utils/extract-helpers.js stripPII. The popup runs in its own page
-// (no content-script context to share the module), so the semantics are copied
-// here. PHONE_RE stays in sync with the Task 9 fix: phone-shaped only, so salary
-// ranges (60000-75000) and reference numbers never get masked as phones.
-const PAGE_EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g
-const PAGE_PROFILE_RE = /https?:\/\/[^\s]*linkedin\.com\/in\/[^\s]*/gi
-const PAGE_PHONE_RE =
-  /(?:\+\d{1,4}(?:[\s.-]\d{1,4}){2,6})|(?:(?:\(\d{2,4}\)|0\d{0,3})(?:[\s.-]\d{2,4}){2,5})/g
-
-function stripPagePII(text) {
-  return String(text || '')
-    .replace(PAGE_EMAIL_RE, '[email]')
-    .replace(PAGE_PROFILE_RE, '[profile]')
-    .replace(PAGE_PHONE_RE, (m) => (m.replace(/\D/g, '').length >= 9 ? '[phone]' : m))
-}
+// PII stripping is the shared window.JobSwiperExtract.stripPII from
+// utils/extract-helpers.js, loaded via popup.html before this script. No local
+// copy: the popup page loads the packaged module directly, keeping the email /
+// profile / phone regexes in one place (phone-shaped only, so salary ranges like
+// 60000-75000 and reference numbers never get masked as phones).
 
 async function collectActiveTabText() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
@@ -261,7 +251,7 @@ document.getElementById('save-page-btn')?.addEventListener('click', async () => 
   btn.disabled = true
   btn.textContent = 'Extracting...'
   try {
-    const stripped = stripPagePII(text).slice(0, 15000)
+    const stripped = window.JobSwiperExtract.stripPII(text).slice(0, 15000)
     // 25s client timeout gives room over PARSE_JOB_PAGE's 20s server-side call.
     const parsed = await callSW({ type: 'PARSE_JOB_PAGE', pageText: stripped, url: tab.url }, { timeoutMs: 25000 })
     if (!parsed?.success || !parsed.job) throw new Error(parsed?.error || 'Could not extract a job from this page')
