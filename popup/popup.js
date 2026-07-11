@@ -192,3 +192,93 @@ async function loadStats(token) {
     statsEl.innerHTML = '<div style="text-align:center;color:#9ca3af;font-size:11px">Could not load stats</div>'
   }
 }
+
+// ── Universal "Save this page" capture ──────────────
+// Grabs the active tab's text (best frame = longest innerText), runs a
+// two-threshold plausibility gate, then routes it through the same
+// PARSE_JOB_PAGE + SAVE_JOB service-worker path the content scripts use.
+const EXCLUDED_LINKEDIN = /linkedin\.com\/(feed|messaging|notifications|mynetwork)/
+const JOB_SIGNALS = [
+  /apply|postuler|candidature/i,
+  /salary|salaire|compensation/i,
+  /requirements|qualifications|profil recherch/i,
+  /full[- ]?time|part[- ]?time|cdi|cdd|temps plein/i,
+  /responsibilit|missions|about the role|votre r[oô]le/i,
+  /experience|exp[eé]rience/i,
+]
+
+function plausibilityScore(text) {
+  return JOB_SIGNALS.reduce((s, re) => s + (re.test(text) ? 1 : 0), 0)
+}
+
+// Mirrors utils/extract-helpers.js stripPII. The popup runs in its own page
+// (no content-script context to share the module), so the semantics are copied
+// here. PHONE_RE stays in sync with the Task 9 fix: phone-shaped only, so salary
+// ranges (60000-75000) and reference numbers never get masked as phones.
+const PAGE_EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g
+const PAGE_PROFILE_RE = /https?:\/\/[^\s]*linkedin\.com\/in\/[^\s]*/gi
+const PAGE_PHONE_RE =
+  /(?:\+\d{1,4}(?:[\s.-]\d{1,4}){2,6})|(?:(?:\(\d{2,4}\)|0\d{0,3})(?:[\s.-]\d{2,4}){2,5})/g
+
+function stripPagePII(text) {
+  return String(text || '')
+    .replace(PAGE_EMAIL_RE, '[email]')
+    .replace(PAGE_PROFILE_RE, '[profile]')
+    .replace(PAGE_PHONE_RE, (m) => (m.replace(/\D/g, '').length >= 9 ? '[phone]' : m))
+}
+
+async function collectActiveTabText() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+  if (!tab?.id || !tab.url?.startsWith('http')) return { error: 'This page cannot be captured' }
+  if (EXCLUDED_LINKEDIN.test(tab.url)) {
+    return { error: 'Not available on LinkedIn feed, messages or notifications. Open the job page itself.' }
+  }
+  const frames = await chrome.scripting.executeScript({
+    target: { tabId: tab.id, allFrames: true },
+    func: () => document.body?.innerText?.slice(0, 20000) || '',
+  })
+  const best = frames.map((f) => f.result || '').sort((a, b) => b.length - a.length)[0] || ''
+  return { tab, text: best }
+}
+
+document.getElementById('save-page-btn')?.addEventListener('click', async () => {
+  const status = document.getElementById('save-page-status')
+  const btn = document.getElementById('save-page-btn')
+  status.textContent = ''
+  const { tab, text, error } = await collectActiveTabText()
+  if (error) { status.textContent = error; return }
+
+  const score = plausibilityScore(text)
+  if (score < 2) { status.textContent = 'This page does not look like a job posting.'; return }
+  if (score < 4 && !confirm('This page does not clearly look like a job posting. Send it anyway?')) return
+
+  const { pageCapNoticeShown } = await chrome.storage.local.get('pageCapNoticeShown')
+  if (!pageCapNoticeShown) {
+    status.textContent = 'Page content is sent to JobSwiper AI to extract the job.'
+    await chrome.storage.local.set({ pageCapNoticeShown: true })
+  }
+
+  btn.disabled = true
+  btn.textContent = 'Extracting...'
+  try {
+    const stripped = stripPagePII(text).slice(0, 15000)
+    // 25s client timeout gives room over PARSE_JOB_PAGE's 20s server-side call.
+    const parsed = await callSW({ type: 'PARSE_JOB_PAGE', pageText: stripped, url: tab.url }, { timeoutMs: 25000 })
+    if (!parsed?.success || !parsed.job) throw new Error(parsed?.error || 'Could not extract a job from this page')
+    // SAVE_JOB resolves its own token via getValidToken in the service worker,
+    // so no token is passed from here (message.token is not read by the handler).
+    const saved = await callSW({
+      type: 'SAVE_JOB',
+      data: { ...parsed.job, source: 'page-capture', extraction_method: 'ai', url: parsed.job.url || tab.url },
+    })
+    if (!saved?.success) throw new Error(saved?.error || 'Save failed')
+    btn.textContent = 'Saved!'
+    status.textContent = `${parsed.job.title} at ${parsed.job.company}`
+  } catch (e) {
+    btn.textContent = 'Save this page to JobSwiper'
+    status.textContent = e.message
+  } finally {
+    btn.disabled = false
+    setTimeout(() => { btn.textContent = 'Save this page to JobSwiper' }, 3000)
+  }
+})
