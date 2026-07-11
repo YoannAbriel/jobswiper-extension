@@ -154,7 +154,7 @@ async function autoImportCurrentJob() {
   const jobData = extractJobData()
   let effectiveJob = jobData
   if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
-    effectiveJob = await aiExtractFallback('wttj')
+    effectiveJob = await aiExtractFallback('welcometothejungle')
     if (!effectiveJob) {
       return { success: false, error: 'No job data on this page' }
     }
@@ -211,7 +211,7 @@ async function handleSave(btn, jobDataOverride, retryCount = 0) {
   let effectiveJob = jobData
   if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
     btn.innerHTML = '<div class="spinner"></div> Smart extraction...'
-    effectiveJob = await aiExtractFallback('wttj')
+    effectiveJob = await aiExtractFallback('welcometothejungle')
     if (!effectiveJob) {
       btn.innerHTML = '⚠️ Could not extract, open the job page and retry'
       setTimeout(() => resetButton(btn), 3000)
