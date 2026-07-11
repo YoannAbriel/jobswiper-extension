@@ -10,8 +10,19 @@ LinkedIn surfaces and fails the release if any attempt produces a dry fail.
   wrong profile.
 - Baseline BEFORE a selector change, then run again post-fix: the target is
   0 dry fails / 100.
-- LinkedIn challenges (checkpoint/authwall) are SKIPPED and replayed, never
-  counted as failures.
+- Success = the save button gains the `saved` class ONLY (`.jobswiper-save-btn.saved`).
+  A `.jobswiper-toast` also renders on error ('Error: ...', 'Log in to JobSwiper
+  first'), so it is NOT counted as a success.
+- LinkedIn challenges (checkpoint/authwall) are SKIPPED and REPLAYED: a skip does
+  not consume a real-attempt slot, so `N` REAL save attempts always run. This is
+  checked both at page load and mid-attempt (a wall thrown after `goto` counts as
+  a skip, never a dry fail).
+- Hard cap: 30 total skips. Beyond that the run ABORTS with exit code 2 ('too many
+  challenges, run aborted'), distinct from the dry-fail exit 1. Too many walls mean
+  the TEST account is rate-limited, not that the extension is broken.
+- Surfaces exercised (logged in): the two list surfaces below plus, on odd
+  iterations, the job DETAIL surface (`/jobs/view/...`) reached from the first job
+  card on the current list. The detail attempt feeds ok/dryFail like any other.
 - A dry fail = neither DOM extraction nor AI fallback produced a save.
 - Exit code is 0 only when `dryFail === 0`. Skipped attempts do not fail the gate.
 
@@ -67,6 +78,21 @@ To restore normal behavior afterward:
 ```js
 chrome.storage.local.remove('disableReloadHack')
 ```
+
+## Guest (logged-out) surface
+
+The guest variant is NOT faked in-script. It is the SAME gate re-run against a
+logged-OUT profile: point `PROFILE_DIR` at a persistent Chrome profile that is
+NOT logged into LinkedIn and run the script again as a separate run.
+
+```bash
+# Separate run, logged-out profile: exercises the guest-facing save path.
+PROFILE_DIR=/path/to/logged-out-profile node test/protocol/capture-run.mjs 40
+```
+
+Logged out, LinkedIn serves the authwall on most job surfaces, so expect a high
+skip count. If skips reach the cap the run aborts (exit 2), which is the expected
+signal that the guest surface is wall-gated, not that the extension failed.
 
 ## Cadence
 
