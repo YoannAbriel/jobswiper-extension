@@ -220,8 +220,14 @@ function showToast(msg, link) {
 // flow. No UI side effects, no retry button, no toast. Just extract -> SAVE_JOB.
 async function autoImportCurrentJob() {
   const jobData = extractJobData()
-  if (!jobData.title || !jobData.company) {
-    return { success: false, error: 'No job data on this page' }
+  let effectiveJob = jobData
+  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
+    effectiveJob = await aiExtractFallback()
+    if (!effectiveJob) {
+      return { success: false, error: 'No job data on this page' }
+    }
+  } else {
+    effectiveJob.extraction_method = 'dom'
   }
   let { token } = await chrome.storage.local.get('token')
   if (!token) {
@@ -232,7 +238,28 @@ async function autoImportCurrentJob() {
     } catch {}
   }
   if (!token) return { success: false, error: 'Not authenticated' }
-  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
+  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
+}
+
+// Stage 3: AI net. Returns a plausible jobData or null.
+async function aiExtractFallback() {
+  const pageText = window.JobSwiperExtract.collectPageText(15000)
+  if (pageText.length < 200) return null
+  try {
+    const res = await chrome.runtime.sendMessage({
+      type: 'PARSE_JOB_PAGE',
+      pageText,
+      url: window.location.href,
+    })
+    if (!res?.success || !res.job) return null
+    const job = { ...res.job, source: 'linkedin', extraction_method: 'ai' }
+    // keep the canonical LinkedIn url when we have a job id
+    const id = getLinkedInJobId()
+    if (id) job.url = `https://www.linkedin.com/jobs/view/${id}/`
+    return window.JobSwiperExtract.isPlausibleJob(job) ? job : null
+  } catch {
+    return null
+  }
 }
 
 async function handleSave(btn, retryCount = 0) {
@@ -240,10 +267,17 @@ async function handleSave(btn, retryCount = 0) {
   btn.disabled = true
 
   const jobData = extractJobData()
-  if (!jobData.title || !jobData.company) {
-    btn.innerHTML = '⚠️ Could not extract job'
-    setTimeout(() => resetButton(btn), 2000)
-    return
+  let effectiveJob = jobData
+  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
+    btn.innerHTML = '<div class="spinner"></div> Smart extraction...'
+    effectiveJob = await aiExtractFallback()
+    if (!effectiveJob) {
+      btn.innerHTML = '⚠️ Could not extract, open the job page and retry'
+      setTimeout(() => resetButton(btn), 3000)
+      return
+    }
+  } else {
+    effectiveJob.extraction_method = 'dom'
   }
 
   try {
@@ -264,7 +298,7 @@ async function handleSave(btn, retryCount = 0) {
       return
     }
 
-    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
+    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
@@ -545,9 +579,11 @@ if (!window.__jobswiper_linkedin_loaded) {
   // which the patch runs at document_start before LinkedIn's bundle and the
   // anchor becomes reachable.
   let _reloadAttempts = 0
-  const _reloadTimer = setInterval(() => {
+  const _reloadTimer = setInterval(async () => {
     if (!chrome.runtime?.id) { clearInterval(_reloadTimer); return }
     try {
+      const { disableReloadHack } = await chrome.storage.local.get('disableReloadHack')
+      if (disableReloadHack) { clearInterval(_reloadTimer); return }
       if (window.sessionStorage.getItem('__jobswiper_reload_done') === '1') {
         clearInterval(_reloadTimer)
         return
