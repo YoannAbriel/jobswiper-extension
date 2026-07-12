@@ -314,27 +314,46 @@ async function showAnalysisPanel() {
     }
 
     // Match score (panel uses tier-class for legacy CSS hooks)
-    const tier = window.JobSwiperMatch.getMatchTier(data.match_score)
-    const tierClass = tier.tier === 'strong' ? 'strong'
-      : tier.tier === 'moderate' ? 'good'
-      : 'low'
-    body.innerHTML += `
-      <div class="jobswiper-score ${tierClass}">
-        <div>
-          <div class="jobswiper-score-num">${data.match_score}%</div>
+    if (window.JobSwiperMatch.isScoreFallback(data)) {
+      // Scoring v2 cold start: no real coverage score, prompt to complete profile.
+      body.innerHTML += `
+        <div class="jobswiper-score fallback">
+          <div>
+            <div class="jobswiper-score-label">Complete your profile to get a real match score</div>
+          </div>
         </div>
-        <div>
-          <div class="jobswiper-score-label">${tier.label}</div>
-          <div style="font-size:11px;color:#71717a;margin-top:2px">${data.matched_skills?.length || 0}/${data.keywords?.length || 0} skills matched</div>
+      `
+    } else {
+      const tier = window.JobSwiperMatch.getMatchTier(data.match_score)
+      const tierClass = tier.tier === 'strong' ? 'strong'
+        : tier.tier === 'moderate' ? 'good'
+        : tier.tier === 'low' ? 'low'
+        : 'career-pivot'
+      // v2 denominator is the requirement universe the server scored
+      // (met + unmet), not the raw keyword list. Hide when there is none.
+      const reqMet = data.matched_skills?.length || 0
+      const reqTotal = reqMet + (data.missing_skills?.length || 0)
+      const fractionHtml = reqTotal > 0
+        ? `<div style="font-size:11px;color:#71717a;margin-top:2px">${reqMet}/${reqTotal} requirements met</div>`
+        : ''
+      body.innerHTML += `
+        <div class="jobswiper-score ${tierClass}">
+          <div>
+            <div class="jobswiper-score-num">${data.match_score}%</div>
+          </div>
+          <div>
+            <div class="jobswiper-score-label">${tier.label}</div>
+            ${fractionHtml}
+          </div>
         </div>
-      </div>
-    `
+      `
+    }
 
     // Matched skills
     if (data.matched_skills?.length > 0) {
       body.innerHTML += `
         <div class="jobswiper-section">
-          <div class="jobswiper-section-title">✓ Your matching skills</div>
+          <div class="jobswiper-section-title">✓ Requirements you meet</div>
           <div class="jobswiper-skills">
             ${data.matched_skills.map(s => `<span class="jobswiper-skill matched">${esc(s)}</span>`).join('')}
           </div>
@@ -346,7 +365,7 @@ async function showAnalysisPanel() {
     if (data.missing_skills?.length > 0) {
       body.innerHTML += `
         <div class="jobswiper-section">
-          <div class="jobswiper-section-title">⚠ Skills to highlight</div>
+          <div class="jobswiper-section-title">⚠ Requirements to address</div>
           <div class="jobswiper-skills">
             ${data.missing_skills.map(s => `<span class="jobswiper-skill missing">${esc(s)}</span>`).join('')}
           </div>
@@ -466,7 +485,7 @@ function injectButton() {
       const score = data.match_score
       if (score == null) { scoreBadge.remove(); return }
 
-      window.JobSwiperMatch.applyMatchBadge(scoreBadge, score)
+      window.JobSwiperMatch.applyScoreBadge(scoreBadge, score, data)
       window.JobSwiperMatch.attachExplanationPopover(scoreBadge, score, data)
 
       if (data.already_saved) {
@@ -539,6 +558,13 @@ async function _doInjectBadges() {
           const data = await res.json()
           const score = data.match_score
           if (score == null) { badge.remove(); return }
+          // Scoring v2 cold start: neutral prompt, never a red 0% on the card.
+          if (window.JobSwiperMatch.isScoreFallback(data)) {
+            badge.style.background = '#f4f4f5'
+            badge.style.color = '#71717a'
+            badge.textContent = 'Set up profile'
+            return
+          }
           const tier = window.JobSwiperMatch.getMatchTier(score)
           badge.style.background = tier.bg
           badge.style.color = tier.fg
