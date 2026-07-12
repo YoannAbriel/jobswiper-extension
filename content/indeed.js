@@ -180,23 +180,9 @@ try {
   })
 } catch {}
 
-// Stage 3: AI net. Returns a plausible jobData or null.
-async function aiExtractFallback(sourceName) {
-  const pageText = window.JobSwiperExtract.collectPageText(15000)
-  if (pageText.length < 200) return null
-  try {
-    const res = await chrome.runtime.sendMessage({
-      type: 'PARSE_JOB_PAGE',
-      pageText,
-      url: window.location.href,
-    })
-    if (!res?.success || !res.job) return null
-    const job = { ...res.job, source: sourceName, extraction_method: 'ai' }
-    if (!job.url) job.url = window.location.href
-    return window.JobSwiperExtract.isPlausibleJob(job) ? job : null
-  } catch {
-    return null
-  }
+// Stage 3: AI net, shared flow in utils/capture-flow.js.
+function aiExtractFallback(sourceName) {
+  return window.JobSwiperCapture.aiExtractFallback({ source: sourceName })
 }
 
 async function handleSave(btn, retryCount = 0) {

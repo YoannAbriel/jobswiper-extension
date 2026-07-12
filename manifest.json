@@ -63,7 +63,7 @@
         "https://*.indeed.ca/*",
         "https://*.indeed.com.au/*"
       ],
-      "js": ["utils/extract-helpers.js", "utils/match.js", "content/indeed.js"],
+      "js": ["utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/indeed.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -81,7 +81,7 @@
         "https://*.linkedin.com/jobs/*",
         "https://*.linkedin.com/comm/jobs/*"
       ],
-      "js": ["utils/extract-helpers.js", "utils/match.js", "content/linkedin.js"],
+      "js": ["utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/linkedin.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -90,7 +90,7 @@
         "https://*.jobup.ch/*",
         "https://*.jobs.ch/*"
       ],
-      "js": ["utils/extract-helpers.js", "utils/match.js", "content/jobup.js"],
+      "js": ["utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/jobup.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -98,7 +98,7 @@
       "matches": [
         "https://*.welcometothejungle.com/*"
       ],
-      "js": ["utils/extract-helpers.js", "utils/match.js", "content/wttj.js"],
+      "js": ["utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/wttj.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },

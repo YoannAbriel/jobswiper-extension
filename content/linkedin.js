@@ -241,25 +241,16 @@ async function autoImportCurrentJob() {
   return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
 }
 
-// Stage 3: AI net. Returns a plausible jobData or null.
-async function aiExtractFallback() {
-  const pageText = window.JobSwiperExtract.collectPageText(15000)
-  if (pageText.length < 200) return null
-  try {
-    const res = await chrome.runtime.sendMessage({
-      type: 'PARSE_JOB_PAGE',
-      pageText,
-      url: window.location.href,
-    })
-    if (!res?.success || !res.job) return null
-    const job = { ...res.job, source: 'linkedin', extraction_method: 'ai' }
-    // keep the canonical LinkedIn url when we have a job id
-    const id = getLinkedInJobId()
-    if (id) job.url = `https://www.linkedin.com/jobs/view/${id}/`
-    return window.JobSwiperExtract.isPlausibleJob(job) ? job : null
-  } catch {
-    return null
-  }
+// Stage 3: AI net, shared flow in utils/capture-flow.js. Keeps the canonical
+// LinkedIn url when a job id is present.
+function aiExtractFallback() {
+  return window.JobSwiperCapture.aiExtractFallback({
+    source: 'linkedin',
+    canonicalUrl: () => {
+      const id = getLinkedInJobId()
+      return id ? `https://www.linkedin.com/jobs/view/${id}/` : null
+    },
+  })
 }
 
 async function handleSave(btn, retryCount = 0) {

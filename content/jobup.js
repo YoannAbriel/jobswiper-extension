@@ -202,7 +202,7 @@ async function autoImportCurrentJob() {
   const jobData = extractJobData()
   let effectiveJob = jobData
   if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
-    effectiveJob = await aiExtractFallback(window.location.hostname.includes('jobs.ch') ? 'jobs.ch' : 'jobup')
+    effectiveJob = await aiExtractFallback(JOBUP_SOURCE)
     if (!effectiveJob) {
       return { success: false, error: 'No job data on this page' }
     }
@@ -232,23 +232,12 @@ try {
   })
 } catch {}
 
-// Stage 3: AI net. Returns a plausible jobData or null.
-async function aiExtractFallback(sourceName) {
-  const pageText = window.JobSwiperExtract.collectPageText(15000)
-  if (pageText.length < 200) return null
-  try {
-    const res = await chrome.runtime.sendMessage({
-      type: 'PARSE_JOB_PAGE',
-      pageText,
-      url: window.location.href,
-    })
-    if (!res?.success || !res.job) return null
-    const job = { ...res.job, source: sourceName, extraction_method: 'ai' }
-    if (!job.url) job.url = window.location.href
-    return window.JobSwiperExtract.isPlausibleJob(job) ? job : null
-  } catch {
-    return null
-  }
+// Same source value as the DOM extraction path of this file.
+const JOBUP_SOURCE = window.location.hostname.includes('jobs.ch') ? 'jobs.ch' : 'jobup'
+
+// Stage 3: AI net, shared flow in utils/capture-flow.js.
+function aiExtractFallback(sourceName) {
+  return window.JobSwiperCapture.aiExtractFallback({ source: sourceName })
 }
 
 async function handleSave(btn, retryCount = 0) {
@@ -259,7 +248,7 @@ async function handleSave(btn, retryCount = 0) {
   let effectiveJob = jobData
   if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
     btn.innerHTML = '<div class="spinner"></div> Smart extraction...'
-    effectiveJob = await aiExtractFallback(window.location.hostname.includes('jobs.ch') ? 'jobs.ch' : 'jobup')
+    effectiveJob = await aiExtractFallback(JOBUP_SOURCE)
     if (!effectiveJob) {
       btn.innerHTML = '⚠️ Could not extract, open the job page and retry'
       setTimeout(() => resetButton(btn), 3000)
