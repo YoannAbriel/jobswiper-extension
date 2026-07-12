@@ -336,7 +336,7 @@ function fetchInlineScore(badge) {
     }, 8000).then(r => r.json()).then(data => {
       const score = data.match_score
       if (score == null) { badge.remove(); _scoreBadge = null; return }
-      window.JobSwiperMatch.applyMatchBadge(badge, score)
+      window.JobSwiperMatch.applyScoreBadge(badge, score, data)
       window.JobSwiperMatch.attachExplanationPopover(badge, score, data)
       if (data.already_saved) {
         _barBtn.className = 'jobswiper-save-btn saved'

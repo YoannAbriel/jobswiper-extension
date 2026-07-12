@@ -385,7 +385,7 @@ function getOrCreateBar() {
         const score = data.match_score
         if (score == null) { scoreBadge.remove(); return }
 
-        window.JobSwiperMatch.applyMatchBadge(scoreBadge, score)
+        window.JobSwiperMatch.applyScoreBadge(scoreBadge, score, data)
         window.JobSwiperMatch.attachExplanationPopover(scoreBadge, score, data)
 
         if (data.already_saved) {

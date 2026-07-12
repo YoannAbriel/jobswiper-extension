@@ -103,6 +103,56 @@
     badge.appendChild(why)
   }
 
+  /**
+   * Scoring v2 cold-start state: when the server could not compute a real
+   * requirement-coverage score it returns match_score 0 + score_fallback true.
+   * Render a neutral "complete your profile" prompt instead of a red 0%: no
+   * percentage, no tier label, gray styling. The Why? affordance is kept so the
+   * popover still opens and explains what to do. Click/link behavior unchanged.
+   */
+  function applyFallbackBadge(badge) {
+    if (!badge) return
+    badge.textContent = ''
+    badge.style.background = '#f4f4f5'
+    badge.style.color = '#71717a'
+    badge.style.border = '1px solid #e4e4e7'
+    badge.style.cursor = 'pointer'
+    badge.dataset.jswScore = ''
+    badge.dataset.jswTier = 'fallback'
+    badge.setAttribute('title', 'Complete your profile to get a real match score.')
+
+    const label = document.createElement('span')
+    label.textContent = 'Set up profile'
+    label.style.cssText = 'font-weight:600;'
+
+    const why = document.createElement('span')
+    why.className = 'jobswiper-why-link'
+    why.textContent = 'Why?'
+    why.style.cssText = `font-weight:600;text-decoration:underline;opacity:0.85;`
+
+    const sep = document.createElement('span')
+    sep.textContent = ' · '
+    sep.style.opacity = '0.55'
+
+    badge.appendChild(label)
+    badge.appendChild(sep)
+    badge.appendChild(why)
+  }
+
+  /** True when the analyze-job response is a scoring-v2 fallback (no real score). */
+  function isScoreFallback(data) {
+    return !!(data && data.score_fallback)
+  }
+
+  /**
+   * Single entry point for the inline detail badge: routes to the neutral
+   * fallback state on a cold-start response, otherwise the tier badge.
+   */
+  function applyScoreBadge(badge, score, data) {
+    if (isScoreFallback(data)) return applyFallbackBadge(badge)
+    return applyMatchBadge(badge, score)
+  }
+
   // ---------------------------------------------------------------------------
   // Popover
   // ---------------------------------------------------------------------------
@@ -183,20 +233,36 @@
     }
 
     if (axisKey === 'skills' && (axisData?.matched?.length || axisData?.missing?.length)) {
+      // Scoring v2: matched/missing are verbatim JD requirement phrases (met /
+      // unmet), not single keywords, so they can be long. Chip CSS truncates
+      // each one; a trailing "+N more" chip accounts for the sliced remainder.
       const chips = document.createElement('div')
       chips.className = 'jobswiper-axis-chips'
-      ;(axisData.matched || []).slice(0, 6).forEach((s) => {
+      const matched = axisData.matched || []
+      const missing = axisData.missing || []
+      const MATCHED_CAP = 6
+      const MISSING_CAP = 4
+      matched.slice(0, MATCHED_CAP).forEach((s) => {
         const c = document.createElement('span')
         c.className = 'jobswiper-chip matched'
         c.textContent = `✓ ${s}`
+        c.setAttribute('title', s)
         chips.appendChild(c)
       })
-      ;(axisData.missing || []).slice(0, 4).forEach((s) => {
+      missing.slice(0, MISSING_CAP).forEach((s) => {
         const c = document.createElement('span')
         c.className = 'jobswiper-chip missing'
         c.textContent = s
+        c.setAttribute('title', s)
         chips.appendChild(c)
       })
+      const overflow = Math.max(0, matched.length - MATCHED_CAP) + Math.max(0, missing.length - MISSING_CAP)
+      if (overflow > 0) {
+        const more = document.createElement('span')
+        more.className = 'jobswiper-chip more'
+        more.textContent = `+${overflow} more`
+        chips.appendChild(more)
+      }
       row.appendChild(chips)
     }
 
@@ -224,7 +290,10 @@
   }
 
   function buildPopoverContent(score, data) {
-    const tier = getMatchTier(score)
+    const fallback = isScoreFallback(data)
+    const tier = fallback
+      ? { bg: '#f4f4f5', dot: '#a1a1aa', fg: '#71717a', label: 'Profile incomplete' }
+      : getMatchTier(score)
     const root = document.createElement('div')
     root.className = 'jobswiper-axis-popover'
     root.setAttribute('role', 'dialog')
@@ -241,7 +310,10 @@
     dot.style.background = tier.dot
 
     const titleText = document.createElement('div')
-    titleText.innerHTML = `<div class="jobswiper-axis-title-main">Why this score?</div>
+    titleText.innerHTML = fallback
+      ? `<div class="jobswiper-axis-title-main">Complete your profile</div>
+      <div class="jobswiper-axis-title-sub"><span style="color:${tier.fg}">${escHtml(tier.label)}</span></div>`
+      : `<div class="jobswiper-axis-title-main">Why this score?</div>
       <div class="jobswiper-axis-title-sub"><strong>${score}</strong> / 100 · <span style="color:${tier.fg}">${escHtml(tier.label)}</span></div>`
 
     title.appendChild(dot)
@@ -262,7 +334,28 @@
     body.className = 'jobswiper-axis-body'
 
     const explanations = data && data.axis_explanations
-    if (!explanations) {
+    if (fallback) {
+      // Cold start: no real coverage score to break down. Point the user at
+      // the one action that unlocks scoring instead of showing empty axes.
+      const empty = document.createElement('div')
+      empty.className = 'jobswiper-axis-empty'
+      const headline = document.createElement('div')
+      headline.className = 'jobswiper-axis-empty-title'
+      headline.textContent = 'Complete your profile to get a real match score'
+      const sub = document.createElement('p')
+      sub.className = 'jobswiper-axis-empty-sub'
+      sub.textContent = 'Add your skills and experience so we can measure how well you cover this job\'s requirements.'
+      const cta = document.createElement('a')
+      cta.className = 'jobswiper-axis-cta'
+      cta.href = `${API_BASE}/dashboard/profile`
+      cta.target = '_blank'
+      cta.rel = 'noopener'
+      cta.textContent = 'Complete profile'
+      empty.appendChild(headline)
+      empty.appendChild(sub)
+      empty.appendChild(cta)
+      body.appendChild(empty)
+    } else if (!explanations) {
       const empty = document.createElement('div')
       empty.className = 'jobswiper-axis-empty'
       const headline = document.createElement('div')
@@ -358,6 +451,9 @@
   window.JobSwiperMatch = {
     getMatchTier,
     applyMatchBadge,
+    applyFallbackBadge,
+    applyScoreBadge,
+    isScoreFallback,
     attachExplanationPopover,
     closePopover,
   }

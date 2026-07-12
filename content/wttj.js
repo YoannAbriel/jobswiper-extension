@@ -326,7 +326,7 @@ function injectDetailButton() {
       }, 8000).then(r => r.json()).then(result => {
         const score = result.match_score
         if (score == null) { scoreBadge.remove(); return }
-        window.JobSwiperMatch.applyMatchBadge(scoreBadge, score)
+        window.JobSwiperMatch.applyScoreBadge(scoreBadge, score, result)
         window.JobSwiperMatch.attachExplanationPopover(scoreBadge, score, result)
         if (result.already_saved) {
           _barBtn.className = 'jobswiper-save-btn saved'
