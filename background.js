@@ -15,7 +15,43 @@ const { API_BASE, fetchWithTimeout, extVersion } = self.JobSwiperShared
 // getValidToken() and the actual fetch.
 const REFRESH_THRESHOLD_SECONDS = 120
 
-// ── Auto-connect: find open JobSwiper tab and grab token ──
+// ── Independent session pull ──
+// Fetch a fresh INDEPENDENT session from GET /api/extension/auth (the app mints
+// one server-side so refreshing the extension token never rotates the web app
+// cookie session). This is the authoritative auth path; autoConnect (below,
+// which scrapes the SHARED cookie token out of an open tab) is only a
+// last-resort fallback for when /auth is unreachable.
+//
+// Dedup: skip when we already hold an independent, still-usable session, so an
+// app SIGNED_IN ping does not mint a new session on every event.
+async function pullIndependentSession(force = false) {
+  if (!force) {
+    const { refresh_token, expires_at, session_independent } =
+      await chrome.storage.local.get(['refresh_token', 'expires_at', 'session_independent'])
+    const stillFresh = expires_at && (expires_at - Math.floor(Date.now() / 1000) > REFRESH_THRESHOLD_SECONDS)
+    if (session_independent && refresh_token && stillFresh) return true
+  }
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/api/extension/auth`, {
+      credentials: 'include',
+      headers: { 'X-JobSwiper-Ext-Version': extVersion() },
+    }, 10000)
+    if (!res.ok) return false
+    const data = await res.json()
+    if (!data?.token) return false
+    await chrome.storage.local.set({
+      token: data.token,
+      refresh_token: data.refresh_token ?? null,
+      expires_at: data.expires_at ?? null,
+      session_independent: true,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+// ── Auto-connect: find open JobSwiper tab and grab token (FALLBACK ONLY) ──
 
 async function autoConnect() {
   const { token } = await chrome.storage.local.get('token')
@@ -121,13 +157,19 @@ async function getValidToken() {
       try {
         const refreshed = await refreshAccessToken(refresh_token)
         if (!refreshed) return null
+        const { session_independent } = await chrome.storage.local.get('session_independent')
         await chrome.storage.local.set({
           token: refreshed.token,
           refresh_token: refreshed.refresh_token,
           expires_at: refreshed.expires_at,
+          // Rotating within the same family preserves independence; keep the
+          // flag truthful so it never outlives the chain it describes.
+          session_independent: !!session_independent,
         })
-        // Dual-logout fix (#3): keep the web app in sync with the rotated token.
-        void propagateSessionToApp(refreshed)
+        // Only the legacy SHARED-chain path needs to push the rotated token back
+        // into the app. An INDEPENDENT extension session is a separate chain by
+        // design, so propagating it would overwrite (and break) the app session.
+        if (!session_independent) void propagateSessionToApp(refreshed)
         return refreshed.token
       } finally {
         inflightRefresh = null
@@ -139,7 +181,7 @@ async function getValidToken() {
 }
 
 async function clearAuthState() {
-  await chrome.storage.local.remove(['token', 'refresh_token', 'expires_at', 'userProfile'])
+  await chrome.storage.local.remove(['token', 'refresh_token', 'expires_at', 'userProfile', 'session_independent'])
 }
 
 /**
@@ -316,9 +358,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     try {
       switch (message?.type) {
         case 'AUTO_CONNECT': {
-          await autoConnect()
+          // Prefer the independent-session mint; fall back to scraping an open
+          // tab's shared token only if /auth is unreachable.
+          const pulled = await pullIndependentSession()
+          if (!pulled) await autoConnect()
           const token = await getValidToken()
           sendResponse({ success: !!token, token })
+          return
+        }
+        case 'PULL_SESSION': {
+          // Fired by detect.js when the web app signals pull_session on login.
+          const ok = await pullIndependentSession(message.force === true)
+          sendResponse({ success: ok })
           return
         }
         case 'SAVE_JOB': {

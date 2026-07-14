@@ -121,6 +121,7 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
             token: data.token,
             refresh_token: data.refresh_token ?? null,
             expires_at: data.expires_at ?? null,
+            session_independent: true,
           })
         }
         showLoggedIn(data.token)
