@@ -181,7 +181,92 @@ async function getValidToken() {
 }
 
 async function clearAuthState() {
-  await chrome.storage.local.remove(['token', 'refresh_token', 'expires_at', 'userProfile', 'session_independent'])
+  await chrome.storage.local.remove(['token', 'refresh_token', 'expires_at', 'userProfile', 'userProfileMeta', 'session_independent'])
+}
+
+// ── Profile pull for autofill (SW-only fetch) ──────────
+// The autofill content script never fetches and never sees a token. It asks the
+// SW (GET_PROFILE), which fetches GET /api/extension/profile with getValidToken()
+// (same pattern as SAVE_JOB / PULL_SESSION) and caches the result 30 min under
+// the existing userProfile key (the key detect.js STORE_PROFILE and autofill
+// read). Cache metadata (timestamp, locale, completeness) is kept separately in
+// userProfileMeta so the profile object stays a clean field map.
+const PROFILE_CACHE_TTL_MS = 30 * 60 * 1000
+
+async function getProfile() {
+  const token = await getValidToken()
+  if (!token) return { ok: false, error: 'Authentication required' }
+
+  const { userProfile, userProfileMeta } = await chrome.storage.local.get(['userProfile', 'userProfileMeta'])
+  const fresh = userProfileMeta && (Date.now() - userProfileMeta.ts < PROFILE_CACHE_TTL_MS)
+  if (userProfile && fresh) {
+    return {
+      ok: true,
+      profile: userProfile,
+      locale: userProfileMeta.locale ?? null,
+      completeness: userProfileMeta.completeness ?? null,
+      cached: true,
+    }
+  }
+
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/api/extension/profile`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        // CORS-exempt on the SW (host_permissions), so a custom header is safe.
+        'X-JobSwiper-Ext-Version': extVersion(),
+      },
+    }, 10000)
+
+    if (res.status === 401) {
+      await chrome.storage.local.remove(['token', 'refresh_token', 'expires_at'])
+      return { ok: false, error: 'Authentication required' }
+    }
+    if (!res.ok) {
+      // Fall back to a stale cached profile rather than failing the button.
+      if (userProfile) {
+        return {
+          ok: true,
+          profile: userProfile,
+          locale: userProfileMeta?.locale ?? null,
+          completeness: userProfileMeta?.completeness ?? null,
+          cached: true,
+          stale: true,
+        }
+      }
+      return { ok: false, error: `HTTP ${res.status}` }
+    }
+
+    const data = await res.json()
+    const profile = data?.profile || {}
+    await chrome.storage.local.set({
+      userProfile: profile,
+      userProfileMeta: {
+        ts: Date.now(),
+        locale: data?.locale ?? null,
+        completeness: data?.completeness ?? null,
+        version: data?.version ?? null,
+      },
+    })
+    return {
+      ok: true,
+      profile,
+      locale: data?.locale ?? null,
+      completeness: data?.completeness ?? null,
+    }
+  } catch {
+    if (userProfile) {
+      return {
+        ok: true,
+        profile: userProfile,
+        locale: userProfileMeta?.locale ?? null,
+        completeness: userProfileMeta?.completeness ?? null,
+        cached: true,
+        stale: true,
+      }
+    }
+    return { ok: false, error: 'network' }
+  }
 }
 
 /**
@@ -353,7 +438,7 @@ if (chrome.webNavigation?.onHistoryStateUpdated) {
 
 // Async message handlers wrapped in a single dispatch, so we can use await
 // throughout and always return `true` to keep the channel open.
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   ;(async () => {
     try {
       switch (message?.type) {
@@ -425,6 +510,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         case 'STORE_PROFILE': {
           await chrome.storage.local.set({ userProfile: message.profile })
           sendResponse({ success: true })
+          return
+        }
+        case 'GET_PROFILE': {
+          // SW-side profile fetch for autofill. The token never leaves the SW.
+          // Only this extension's own contexts may pull the profile PII (there
+          // is no externally_connectable today; this future-proofs against it).
+          if (sender.id !== chrome.runtime.id) { sendResponse({ ok: false }); return }
+          const result = await getProfile()
+          sendResponse(result)
           return
         }
         case 'LOGOUT': {

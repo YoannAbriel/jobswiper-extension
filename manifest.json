@@ -125,7 +125,7 @@
         "https://*.bamboohr.com/*",
         "https://*.jazz.co/*"
       ],
-      "js": ["content/autofill.js"],
+      "js": ["content/apply-shared.js", "content/autofill.js"],
       "css": ["content/jobswiper.css"],
       "run_at": "document_idle"
     }
