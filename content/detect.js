@@ -22,24 +22,33 @@ window.addEventListener('message', (event) => {
   // so popup, detect, and the SW never race on chrome.storage.local
   // writes for the auth bundle.
   if (event.data?.type === 'JOBSWIPER_SET_TOKEN' && event.data.token) {
-    // When the app sets pull_session, IGNORE the shared cookie refresh_token it
-    // carries (storing + refreshing it would rotate and log out the web app)
-    // and pull an INDEPENDENT session instead. Old app builds do not send the
-    // flag, so their shared refresh_token is stored as before (no regression).
     const pull = event.data.pull_session === true
+    if (pull) {
+      // Never store the shared cookie refresh_token (refreshing it would rotate
+      // and log the web app out). Just pull an INDEPENDENT session. We do NOT
+      // STORE_AUTH the access token here: writing refresh_token:null first would
+      // defeat pullIndependentSession's dedup (it skips minting only while a
+      // fresh independent refresh_token is still present), causing a fresh mint
+      // on every page load. pullIndependentSession keeps the existing session
+      // when still valid and mints only when needed.
+      chrome.runtime.sendMessage({ type: 'PULL_SESSION' }, () => {
+        void chrome.runtime.lastError
+        window.postMessage({ type: 'JOBSWIPER_TOKEN_SAVED' }, ALLOWED_ORIGIN)
+      })
+      return
+    }
+    // Old app builds do not send the flag: store the shared refresh_token as
+    // before (no regression for already-installed extensions on the old app).
     chrome.runtime.sendMessage(
       {
         type: 'STORE_AUTH',
         token: event.data.token,
-        refresh_token: pull ? null : (event.data.refresh_token ?? null),
+        refresh_token: event.data.refresh_token ?? null,
         expires_at: event.data.expires_at ?? null,
       },
       () => {
         void chrome.runtime.lastError
         window.postMessage({ type: 'JOBSWIPER_TOKEN_SAVED' }, ALLOWED_ORIGIN)
-        if (pull) {
-          chrome.runtime.sendMessage({ type: 'PULL_SESSION' }, () => void chrome.runtime.lastError)
-        }
       },
     )
   }
