@@ -269,6 +269,131 @@ async function getProfile() {
   }
 }
 
+// ── CV attach at apply (Phase 3, SW-only fetch) ────────
+// content/cv-attach.js never fetches and never sees a token. It asks the SW for
+// the CV list (GET_CVS), the CV PDF bytes (FETCH_CV_PDF), and to record the
+// chosen CV (SELECT_CV). The bearer token stays in the SW on all three; the
+// content script only ever receives ids/titles and base64 bytes.
+const MAX_PDF_BYTES = 10 * 1024 * 1024
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// List the CVs selectable for this application (titles + ids only, no bytes).
+// likedJobId is optional: a raw ATS page has none, so the app returns the
+// user's standalone list; an app-triggered flow passes the job for a per-job
+// default. Every field returned is already user-scoped server-side.
+async function getCvsList(likedJobId) {
+  const token = await getValidToken()
+  if (!token) return { ok: false, error: 'auth' }
+  if (likedJobId && !UUID_RE.test(likedJobId)) return { ok: false, error: 'bad_liked_job_id' }
+  try {
+    const qs = likedJobId ? `?likedJobId=${encodeURIComponent(likedJobId)}` : ''
+    const res = await fetchWithTimeout(`${API_BASE}/api/extension/cvs${qs}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-JobSwiper-Ext-Version': extVersion(),
+      },
+    }, 10000)
+    if (res.status === 401) return { ok: false, error: 'auth' }
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
+    const data = await res.json()
+    return {
+      ok: true,
+      jobCv: data?.jobCv ?? null,
+      cvs: Array.isArray(data?.cvs) ? data.cvs : [],
+      defaultCvId: data?.defaultCvId ?? null,
+      selectedCvId: data?.selectedCvId ?? null,
+      filenameBase: data?.filenameBase ?? null,
+    }
+  } catch {
+    return { ok: false, error: 'network' }
+  }
+}
+
+// SW-side chunked base64 of the raw PDF bytes. String.fromCharCode.apply over
+// 32 KB windows keeps us under the argument-count limit for large PDFs.
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+  }
+  return btoa(binary)
+}
+
+// Content-Disposition filename (RFC 5987 filename* first, then plain filename).
+function parseContentDispositionFilename(cd) {
+  if (!cd) return null
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(cd)
+  if (star) {
+    const raw = star[1].replace(/^"|"$/g, '')
+    try { return decodeURIComponent(raw) } catch { return raw }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(cd)
+  return plain ? plain[1] : null
+}
+
+// Fetch ONE CV's PDF, by uuid cvId only, from the hardcoded API_BASE (no
+// page-supplied URL, so no SSRF surface). Enforces a 10 MB cap before base64
+// crosses back to the content script.
+async function fetchCvPdf(cvId) {
+  if (!UUID_RE.test(cvId || '')) return { ok: false, error: 'bad_cv_id' }
+  const token = await getValidToken()
+  if (!token) return { ok: false, error: 'auth' }
+  try {
+    const res = await fetchWithTimeout(
+      `${API_BASE}/api/export-cv?cvId=${encodeURIComponent(cvId)}&format=pdf`,
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'X-JobSwiper-Ext-Version': extVersion(),
+        },
+      },
+      60000, // canvas export goes through Puppeteer, up to ~60s
+    )
+    if (res.status === 401) return { ok: false, error: 'auth' }
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
+    const declared = res.headers.get('content-length')
+    if (declared && Number(declared) > MAX_PDF_BYTES) return { ok: false, error: 'too_large' }
+    const buffer = await res.arrayBuffer()
+    if (buffer.byteLength > MAX_PDF_BYTES) return { ok: false, error: 'too_large' }
+    return {
+      ok: true,
+      base64: arrayBufferToBase64(buffer),
+      filename: parseContentDispositionFilename(res.headers.get('content-disposition')),
+      size: buffer.byteLength,
+    }
+  } catch {
+    return { ok: false, error: 'network' }
+  }
+}
+
+// Record which CV the user attached for a job. No-op without a likedJobId (the
+// raw ATS page has none); used by the app-triggered flow that knows the job.
+async function recordSelectedCv(likedJobId, cvId) {
+  if (!likedJobId) return { ok: true, skipped: true }
+  if (!UUID_RE.test(likedJobId)) return { ok: false, error: 'bad_liked_job_id' }
+  if (!UUID_RE.test(cvId || '')) return { ok: false, error: 'bad_cv_id' }
+  const token = await getValidToken()
+  if (!token) return { ok: false, error: 'auth' }
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/api/extension/select-cv`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'X-JobSwiper-Ext-Version': extVersion(),
+      },
+      body: JSON.stringify({ likedJobId, cvId }),
+    }, 10000)
+    if (res.status === 401) return { ok: false, error: 'auth' }
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
+    return { ok: true }
+  } catch {
+    return { ok: false, error: 'network' }
+  }
+}
+
 /**
  * Dual-logout fix (#3). The web app and the extension share ONE Supabase
  * refresh token (ExtensionAuthSync syncs the app's refresh_token to the
@@ -519,6 +644,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (sender.id !== chrome.runtime.id) { sendResponse({ ok: false }); return }
           const result = await getProfile()
           sendResponse(result)
+          return
+        }
+        case 'GET_CVS': {
+          // CV list for the attach control. Ids + titles only, no bytes. Gated
+          // to this extension's own contexts (mirrors GET_PROFILE).
+          if (sender.id !== chrome.runtime.id) { sendResponse({ ok: false }); return }
+          sendResponse(await getCvsList(message.likedJobId || null))
+          return
+        }
+        case 'FETCH_CV_PDF': {
+          // CV PDF bytes for attach/download. Token stays in the SW; the URL is
+          // API_BASE + uuid cvId only (no page-supplied URL); 10 MB capped.
+          if (sender.id !== chrome.runtime.id) { sendResponse({ ok: false }); return }
+          sendResponse(await fetchCvPdf(message.cvId))
+          return
+        }
+        case 'SELECT_CV': {
+          // Persist the chosen CV for a known job (no-op without a likedJobId).
+          if (sender.id !== chrome.runtime.id) { sendResponse({ ok: false }); return }
+          sendResponse(await recordSelectedCv(message.likedJobId || null, message.cvId))
           return
         }
         case 'LOGOUT': {
