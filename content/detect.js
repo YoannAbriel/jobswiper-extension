@@ -22,16 +22,24 @@ window.addEventListener('message', (event) => {
   // so popup, detect, and the SW never race on chrome.storage.local
   // writes for the auth bundle.
   if (event.data?.type === 'JOBSWIPER_SET_TOKEN' && event.data.token) {
+    // When the app sets pull_session, IGNORE the shared cookie refresh_token it
+    // carries (storing + refreshing it would rotate and log out the web app)
+    // and pull an INDEPENDENT session instead. Old app builds do not send the
+    // flag, so their shared refresh_token is stored as before (no regression).
+    const pull = event.data.pull_session === true
     chrome.runtime.sendMessage(
       {
         type: 'STORE_AUTH',
         token: event.data.token,
-        refresh_token: event.data.refresh_token ?? null,
+        refresh_token: pull ? null : (event.data.refresh_token ?? null),
         expires_at: event.data.expires_at ?? null,
       },
       () => {
         void chrome.runtime.lastError
         window.postMessage({ type: 'JOBSWIPER_TOKEN_SAVED' }, ALLOWED_ORIGIN)
+        if (pull) {
+          chrome.runtime.sendMessage({ type: 'PULL_SESSION' }, () => void chrome.runtime.lastError)
+        }
       },
     )
   }
