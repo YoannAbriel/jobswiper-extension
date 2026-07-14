@@ -6,20 +6,8 @@
  * Polls every 1s for button injection in case page re-renders.
  */
 
-const API_BASE = 'https://www.jobswiper.ai'
-
-
-function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), timeoutMs)
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
-}
-
-function esc(str) {
-  const d = document.createElement('div')
-  d.textContent = str
-  return d.innerHTML
-}
+// Shared helpers loaded from utils/shared.js (listed before this script in the manifest).
+const { API_BASE, esc, analyzeJob, requestValidToken, renderBadgeIssue } = window.JobSwiperShared
 
 // ============================================================================
 // Job data extraction
@@ -372,29 +360,31 @@ function getOrCreateBar() {
     ctaMobile.appendChild(_bar)
   }
 
-  // Fetch score for inline badge
-  try {
-    chrome.storage.local.get('token', ({ token }) => {
-      if (!token) { scoreBadge.remove(); return }
-      const jobData = extractJobData()
-      fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify(jobData),
-      }, 8000).then(r => r.json()).then(data => {
-        const score = data.match_score
-        if (score == null) { scoreBadge.remove(); return }
+  // Fetch score for inline badge (through the SW so a refreshed token is used).
+  // Capture the button this fetch belongs to: if the page re-rendered and the
+  // badge is gone when the response lands, do NOT label a new job "Saved" from
+  // the old job's response (stale-closure mislabel, #5).
+  const btnForThisFetch = _barBtn
+  ;(async () => {
+    const token = await requestValidToken()
+    if (!token) { scoreBadge.remove(); return }
+    const jobData = extractJobData()
+    try {
+      const { ok, status, data } = await analyzeJob(jobData, token, 8000)
+      if (!scoreBadge.isConnected) return // page re-rendered / navigated mid-flight
+      if (!ok) { renderBadgeIssue(scoreBadge, status); return }
+      const score = data.match_score
+      if (score == null) { scoreBadge.remove(); return }
 
-        window.JobSwiperMatch.applyScoreBadge(scoreBadge, score, data)
-        window.JobSwiperMatch.attachExplanationPopover(scoreBadge, score, data)
+      window.JobSwiperMatch.applyScoreBadge(scoreBadge, score, data)
+      window.JobSwiperMatch.attachExplanationPopover(scoreBadge, score, data)
 
-        if (data.already_saved) {
-          _barBtn.className = 'jobswiper-save-btn saved'
-          _barBtn.innerHTML = `${_beamHTML}✓ Saved`
-        }
-      }).catch(() => scoreBadge.remove())
-    })
-  } catch { scoreBadge.remove() }
+      if (data.already_saved && btnForThisFetch && btnForThisFetch === _barBtn && btnForThisFetch.isConnected) {
+        btnForThisFetch.className = 'jobswiper-save-btn saved'
+        btnForThisFetch.innerHTML = `${_beamHTML}✓ Saved`
+      }
+    } catch { if (scoreBadge.isConnected) scoreBadge.remove() }
+  })()
 
   return _bar
 }

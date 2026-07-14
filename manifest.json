@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JobSwiper — AI Job Prep",
-  "version": "1.0.4",
+  "version": "1.1.1",
   "description": "Save jobs from Indeed, LinkedIn, Glassdoor & 10+ job boards. Generate tailored CVs, cover letters & interview prep with AI.",
   "minimum_chrome_version": "120",
   "permissions": [
@@ -63,7 +63,7 @@
         "https://*.indeed.ca/*",
         "https://*.indeed.com.au/*"
       ],
-      "js": ["utils/match.js", "content/indeed.js"],
+      "js": ["utils/shared.js", "utils/match.js", "content/indeed.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -81,7 +81,7 @@
         "https://*.linkedin.com/jobs/*",
         "https://*.linkedin.com/comm/jobs/*"
       ],
-      "js": ["utils/match.js", "content/linkedin.js"],
+      "js": ["utils/shared.js", "utils/match.js", "content/linkedin.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -90,7 +90,7 @@
         "https://*.jobup.ch/*",
         "https://*.jobs.ch/*"
       ],
-      "js": ["utils/match.js", "content/jobup.js"],
+      "js": ["utils/shared.js", "utils/match.js", "content/jobup.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -98,7 +98,7 @@
       "matches": [
         "https://*.welcometothejungle.com/*"
       ],
-      "js": ["utils/match.js", "content/wttj.js"],
+      "js": ["utils/shared.js", "utils/match.js", "content/wttj.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },

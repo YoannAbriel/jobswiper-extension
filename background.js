@@ -3,19 +3,17 @@
  * Handles API calls to JobSwiper backend.
  */
 
-const API_BASE = 'https://www.jobswiper.ai'
+// Shared helpers (API_BASE, fetchWithTimeout, extVersion) live in utils/shared.js
+// so the four site content scripts and this service worker do not each keep a
+// copy. importScripts is valid because this is a classic (non-module) SW.
+importScripts('utils/shared.js')
+const { API_BASE, fetchWithTimeout, extVersion } = self.JobSwiperShared
 
 // Refresh the access token when it has less than this many seconds left.
 // 120s buys enough headroom that a slow saveJob fetch still completes
 // against a still-valid token even after the SW yields between
 // getValidToken() and the actual fetch.
 const REFRESH_THRESHOLD_SECONDS = 120
-
-function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), timeoutMs)
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
-}
 
 // ── Auto-connect: find open JobSwiper tab and grab token ──
 
@@ -73,7 +71,12 @@ async function refreshAccessToken(refreshToken) {
   try {
     const res = await fetchWithTimeout(`${API_BASE}/api/extension/refresh`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // Safe here: the SW request is CORS-exempt (host_permissions), so a
+        // custom header does not trip the refresh route's preflight.
+        'X-JobSwiper-Ext-Version': extVersion(),
+      },
       body: JSON.stringify({ refresh_token: refreshToken }),
     }, 8000)
     if (!res.ok) return null
@@ -83,6 +86,7 @@ async function refreshAccessToken(refreshToken) {
       token: data.token,
       refresh_token: data.refresh_token,
       expires_at: data.expires_at,
+      expires_in: data.expires_in,
     }
   } catch {
     return null
@@ -122,6 +126,8 @@ async function getValidToken() {
           refresh_token: refreshed.refresh_token,
           expires_at: refreshed.expires_at,
         })
+        // Dual-logout fix (#3): keep the web app in sync with the rotated token.
+        void propagateSessionToApp(refreshed)
         return refreshed.token
       } finally {
         inflightRefresh = null
@@ -134,6 +140,60 @@ async function getValidToken() {
 
 async function clearAuthState() {
   await chrome.storage.local.remove(['token', 'refresh_token', 'expires_at', 'userProfile'])
+}
+
+/**
+ * Dual-logout fix (#3). The web app and the extension share ONE Supabase
+ * refresh token (ExtensionAuthSync syncs the app's refresh_token to the
+ * extension). Supabase ROTATES the refresh token on every refresh, so when the
+ * extension refreshes it, the app's stored copy goes stale and the app's own
+ * next auto-refresh gets invalid_refresh_token, logging the web session out.
+ *
+ * Extension-side mitigation: after we rotate the token, push the fresh pair
+ * back into every open app tab. We (a) merge it into the app's persisted
+ * Supabase session in localStorage so the NEXT app load uses the rotated token,
+ * and (b) postMessage it so a live tab can adopt it immediately.
+ *
+ * NEEDS-APP-COORDINATION: for the CURRENTLY loaded tab to adopt the token
+ * without a reload, ExtensionAuthSync must listen for
+ * JOBSWIPER_EXT_TOKEN_REFRESHED and call
+ * supabase.auth.setSession({ access_token, refresh_token }). Until then, the
+ * localStorage merge only covers the next page load.
+ */
+async function propagateSessionToApp(refreshed) {
+  const payload = {
+    token: refreshed.token,
+    refresh_token: refreshed.refresh_token,
+    expires_at: refreshed.expires_at ?? null,
+    expires_in: refreshed.expires_in ?? null,
+  }
+  try {
+    const tabs = await chrome.tabs.query({ url: ['https://jobswiper.ai/*', 'https://www.jobswiper.ai/*'] })
+    for (const tab of tabs) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: (p) => {
+            try {
+              for (const key of Object.keys(localStorage)) {
+                if (!key.includes('sb-') || !key.includes('auth-token')) continue
+                let obj
+                try { obj = JSON.parse(localStorage.getItem(key)) } catch { continue }
+                if (!obj || !obj.access_token) continue
+                obj.access_token = p.token
+                obj.refresh_token = p.refresh_token
+                if (p.expires_at != null) obj.expires_at = p.expires_at
+                if (p.expires_in != null) obj.expires_in = p.expires_in
+                localStorage.setItem(key, JSON.stringify(obj))
+              }
+            } catch {}
+            window.postMessage({ source: 'jobswiper-extension', type: 'JOBSWIPER_EXT_TOKEN_REFRESHED', payload: p }, '*')
+          },
+          args: [payload],
+        })
+      } catch {}
+    }
+  } catch {}
 }
 
 // Run on install + service worker wake
@@ -229,7 +289,7 @@ if (chrome.webNavigation?.onHistoryStateUpdated) {
         try {
           await chrome.scripting.executeScript({
             target: { tabId },
-            files: ['utils/match.js', 'content/linkedin.js'],
+            files: ['utils/shared.js', 'utils/match.js', 'content/linkedin.js'],
           })
           await chrome.scripting.insertCSS({
             target: { tabId },
@@ -371,6 +431,9 @@ async function saveJob(jobData, token) {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
+      // #6: version negotiation. Safe on this SW request (CORS-exempt via
+      // host_permissions); the app can log/read it to detect stale builds.
+      'X-JobSwiper-Ext-Version': extVersion(),
     },
     body: JSON.stringify(jobData),
   }, 15000)
