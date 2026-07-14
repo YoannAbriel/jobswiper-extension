@@ -6,20 +6,9 @@
  * On job change, we just update the button state — no remove/re-inject cycle.
  */
 
-const API_BASE = 'https://www.jobswiper.ai'
-
-
-function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), timeoutMs)
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
-}
-
-function esc(str) {
-  const d = document.createElement('div')
-  d.textContent = str
-  return d.innerHTML
-}
+// Shared helpers loaded from utils/shared.js (listed before this script in the
+// manifest, and injected before it on SPA re-injection from background.js).
+const { API_BASE, esc, analyzeJob, requestValidToken, renderBadgeIssue } = window.JobSwiperShared
 
 function extractJobData() {
   const data = {}
@@ -326,24 +315,31 @@ let _scoreBadge = null
 let _currentJobUrl = ''
 
 function fetchInlineScore(badge) {
-  chrome.storage.local.get('token', ({ token }) => {
-    if (!token) { badge.remove(); _scoreBadge = null; return }
+  // Capture the button this fetch belongs to. On job change updateBar()
+  // replaces the badge node and resets the button, so if `badge` is no longer
+  // connected when the response lands we navigated away and must NOT label the
+  // new job "Saved" from the old job's response (stale-closure mislabel, #5).
+  const btnForThisFetch = _barBtn
+  ;(async () => {
+    const token = await requestValidToken()
+    if (!token) { badge.remove(); if (_scoreBadge === badge) _scoreBadge = null; return }
     const jobData = extractJobData()
-    fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(jobData),
-    }, 8000).then(r => r.json()).then(data => {
+    try {
+      const { ok, status, data } = await analyzeJob(jobData, token, 8000)
+      if (!badge.isConnected) return // navigated to another job mid-flight
+      if (!ok) { renderBadgeIssue(badge, status); return }
       const score = data.match_score
-      if (score == null) { badge.remove(); _scoreBadge = null; return }
+      if (score == null) { badge.remove(); if (_scoreBadge === badge) _scoreBadge = null; return }
       window.JobSwiperMatch.applyScoreBadge(badge, score, data)
       window.JobSwiperMatch.attachExplanationPopover(badge, score, data)
-      if (data.already_saved) {
-        _barBtn.className = 'jobswiper-save-btn saved'
-        _barBtn.innerHTML = `${_beamHTML}✓ Saved`
+      if (data.already_saved && btnForThisFetch && btnForThisFetch === _barBtn && btnForThisFetch.isConnected) {
+        btnForThisFetch.className = 'jobswiper-save-btn saved'
+        btnForThisFetch.innerHTML = `${_beamHTML}✓ Saved`
       }
-    }).catch(() => { badge.remove(); _scoreBadge = null })
-  })
+    } catch {
+      if (badge.isConnected) { badge.remove(); if (_scoreBadge === badge) _scoreBadge = null }
+    }
+  })()
 }
 
 // YOA-238 follow-up: LinkedIn renders job detail in (now open thanks to

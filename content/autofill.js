@@ -7,6 +7,11 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
+// NOTE (#6): the X-JobSwiper-Ext-Version header is intentionally NOT added here.
+// This is a content script on ATS domains, so the /stats fetch is cross-origin
+// and a custom header would fail CORS preflight (the app would need to add it to
+// Access-Control-Allow-Headers first). See NEEDS-APP-COORDINATION in the report.
+
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeoutMs)
