@@ -382,17 +382,113 @@
       setter.call(input, value)
       input.dispatchEvent(new Event('input', { bubbles: true }))
       input.dispatchEvent(new Event('change', { bubbles: true }))
-      input.dispatchEvent(new Event('blur', { bubbles: true }))
       filledInputs.add(input)
 
+      // Autocomplete / combobox fields (Lever & Greenhouse location typeaheads,
+      // etc.) drop a bare text value on blur unless an option is picked, which is
+      // what sets their hidden value. Try to select the matching option; blur is
+      // deferred to trySelectComboboxOption so the dropdown has time to render.
+      if (isComboboxInput(input)) {
+        trySelectComboboxOption(input, value)
+      } else {
+        input.dispatchEvent(new Event('blur', { bubbles: true }))
+      }
+
+      highlightFilled(input)
+    }
+
+    function highlightFilled(input) {
       var prevOutline = input.style.outline
       var prevOffset = input.style.outlineOffset
-      input.style.outline = '2px solid #1e4b8e'
+      input.style.outline = '2px solid #0064be'
       input.style.outlineOffset = '1px'
       setTimeout(function () {
         input.style.outline = prevOutline
         input.style.outlineOffset = prevOffset
       }, 2000)
+    }
+
+    // A text input that drives a typeahead: has ARIA combobox wiring, or is
+    // paired with a hidden "selected..." field the way Lever/Greenhouse encode
+    // the resolved choice.
+    function isComboboxInput(input) {
+      if (!input || input.tagName !== 'INPUT') return false
+      var type = (input.getAttribute('type') || 'text').toLowerCase()
+      if (type !== 'text' && type !== 'search') return false
+      var role = (input.getAttribute('role') || '').toLowerCase()
+      if (role === 'combobox') return true
+      if (input.getAttribute('aria-autocomplete')) return true
+      if (input.getAttribute('aria-controls') || input.getAttribute('aria-owns')) return true
+      if (input.getAttribute('aria-expanded') !== null) return true
+      var form = input.form || (input.closest && input.closest('form')) || document
+      var nm = input.getAttribute('name') || ''
+      if (nm) {
+        var cap = nm.charAt(0).toUpperCase() + nm.slice(1)
+        if (form.querySelector('input[type="hidden"][name="selected' + cap + '"]')) return true
+      }
+      if (input.id) {
+        var base = input.id.replace(/-input$/, '')
+        if (form.querySelector('input[type="hidden"][id="selected-' + base + '"]')) return true
+      }
+      return false
+    }
+
+    function findVisibleOptions(input) {
+      var owns = input.getAttribute('aria-controls') || input.getAttribute('aria-owns')
+      var scope = null
+      if (owns) scope = document.getElementById(owns)
+      scope = scope || document
+      var sels = '[role="option"], [role="listbox"] li, .dropdown-location li, ' +
+        '[class*="dropdown"] li, [class*="autocomplete"] li, [class*="typeahead"] li, ' +
+        '[class*="results"] li, [class*="suggestion"] li'
+      var nodes = Array.prototype.slice.call(scope.querySelectorAll(sels))
+      return nodes.filter(function (n) {
+        return n.offsetParent !== null && (n.textContent || '').trim().length > 0
+      })
+    }
+
+    // Only click an option that actually shares the wanted value's leading token
+    // (e.g. the city name), so we never pick an unrelated first row.
+    function pickBestOption(options, want, wantFirst) {
+      var starts = null, contains = null
+      for (var i = 0; i < options.length; i++) {
+        var txt = normalize(options[i].textContent || '')
+        if (!txt) continue
+        if (txt === want) return options[i]
+        if (!starts && (txt.indexOf(want) === 0 || (wantFirst && txt.indexOf(wantFirst) === 0))) starts = options[i]
+        if (!contains && wantFirst && txt.indexOf(wantFirst) !== -1) contains = options[i]
+      }
+      return starts || contains || null
+    }
+
+    function trySelectComboboxOption(input, value) {
+      try {
+        input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'a' }))
+        input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }))
+      } catch (e) {}
+      var want = normalize(value)
+      var wantFirst = want.split(' ')[0] || want
+      var tries = 0
+      var poll = setInterval(function () {
+        tries++
+        if (!chrome.runtime || !chrome.runtime.id) { clearInterval(poll); return }
+        var options = findVisibleOptions(input)
+        if (options.length) {
+          var pick = pickBestOption(options, want, wantFirst)
+          if (pick) {
+            pick.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+            pick.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+            pick.click()
+          }
+          clearInterval(poll)
+          setTimeout(function () { try { input.dispatchEvent(new Event('blur', { bubbles: true })) } catch (e) {} }, 60)
+          return
+        }
+        if (tries >= 8) { // ~1.2s: typeahead never showed options, keep the text
+          clearInterval(poll)
+          try { input.dispatchEvent(new Event('blur', { bubbles: true })) } catch (e) {}
+        }
+      }, 150)
     }
 
     function showToast(text) {
