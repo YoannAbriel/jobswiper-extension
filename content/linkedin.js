@@ -8,10 +8,43 @@
 
 // Shared helpers loaded from utils/shared.js (listed before this script in the
 // manifest, and injected before it on SPA re-injection from background.js).
-const { API_BASE, esc, analyzeJob, requestValidToken, renderBadgeIssue } = window.JobSwiperShared
+const { API_BASE, esc, fetchWithTimeout, analyzeJob, requestValidToken, renderBadgeIssue } = window.JobSwiperShared
 
 // i18n helper: chrome.i18n.getMessage, falls back to the key so nothing renders blank.
 const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
+
+// YOA-188: bounded ring buffer of injection events in chrome.storage.local, plus
+// a one-shot failure beacon so we learn (locally + server-side, /api/extension/
+// inject-failure) why an injection gave up. Inspect locally with
+// chrome.storage.local.get('jobswiper:linkedin:log').
+const LOG_KEY = 'jobswiper:linkedin:log'
+const LOG_MAX = 200
+function logInjection(outcome, extra) {
+  try {
+    if (!chrome.runtime?.id || !chrome.storage?.local) return
+    const entry = { ts: Date.now(), url: location.pathname + location.search, outcome, ...(extra || {}) }
+    chrome.storage.local.get(LOG_KEY, (res) => {
+      const entries = Array.isArray(res[LOG_KEY]) ? res[LOG_KEY] : []
+      entries.push(entry)
+      chrome.storage.local.set({ [LOG_KEY]: entries.slice(-LOG_MAX) })
+    })
+    if (outcome === 'gave-up') reportInjectionFailure(entry)
+  } catch {}
+}
+function reportInjectionFailure(entry) {
+  try {
+    fetchWithTimeout(`${API_BASE}/api/extension/inject-failure`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outcome: entry.outcome,
+        attempts: typeof entry.attempts === 'number' ? entry.attempts : 0,
+        pathname: location.pathname,
+      }),
+      keepalive: true,
+    }, 5000).catch(() => {})
+  } catch {}
+}
 
 function extractJobData() {
   const data = {}
@@ -368,14 +401,26 @@ function deepQuery(selector, root) {
   return null
 }
 
+// YOA-188: stable class names first, then substring-tolerant fallbacks so a
+// LinkedIn class rename to a hashed variant does not blind us. deepQuery keeps
+// the YOA-238 shadow-DOM piercing.
+function findTopCardAnchor() {
+  return (
+    deepQuery('.job-details-jobs-unified-top-card__container--two-pane') ||
+    deepQuery('.jobs-unified-top-card__content--two-pane') ||
+    deepQuery('[class*="job-details-jobs-unified-top-card__container"]') ||
+    deepQuery('[class*="jobs-unified-top-card"][class*="two-pane"]') ||
+    deepQuery('.job-view-layout [class*="top-card"]')
+  )
+}
+
 function getOrCreateBar() {
   // If bar already exists in DOM, reuse it
   if (_bar && document.body.contains(_bar)) return _bar
 
   // Find the top card container — our bar goes right after it
   // This element is stable (React replaces its children, not the container itself)
-  const topCard = deepQuery('.job-details-jobs-unified-top-card__container--two-pane')
-    || deepQuery('.jobs-unified-top-card__content--two-pane')
+  const topCard = findTopCardAnchor()
 
   if (!topCard) return null
 
@@ -400,7 +445,40 @@ function getOrCreateBar() {
   topCard.parentElement.insertBefore(_bar, topCard.nextSibling)
 
   fetchInlineScore(_scoreBadge)
+  logInjection('injected')
   return _bar
+}
+
+// YOA-188: when the anchor is briefly missing right after a nav, the 1.5s poll
+// is too slow. Retry on a tight exponential backoff, then give up (and beacon)
+// so we do not loop forever on a non-job page. The YOA-238 reload safety net
+// (further down) still covers the closed-shadow-root timing case if this never
+// injects; the fast retry usually wins first, which cancels that reload.
+const _INJECT_RETRY_DELAYS = [200, 500, 1000, 2000, 4000]
+let _retryAttempt = 0
+let _retryTimer = null
+let _retryGaveUp = false
+function resetRetry() {
+  _retryAttempt = 0
+  _retryGaveUp = false
+  if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null }
+}
+function scheduleInjectRetry() {
+  if (_retryTimer || _retryGaveUp) return
+  if (_retryAttempt >= _INJECT_RETRY_DELAYS.length) {
+    _retryGaveUp = true
+    logInjection('gave-up', { attempts: _retryAttempt })
+    return
+  }
+  const delay = _INJECT_RETRY_DELAYS[_retryAttempt++]
+  _retryTimer = setTimeout(() => {
+    _retryTimer = null
+    if (!chrome.runtime?.id) return
+    if (!isJobPage()) { resetRetry(); return }
+    if (_bar && document.body.contains(_bar)) { resetRetry(); return }
+    if (getOrCreateBar()) { resetRetry(); updateBar() }
+    else scheduleInjectRetry()
+  }, delay)
 }
 
 function getLinkedInJobId() {
@@ -434,10 +512,16 @@ function updateBar() {
   // Same job — nothing to do
   if (currentId === _currentJobUrl && _bar && document.body.contains(_bar)) return
 
+  // Only reset the retry backoff on a genuine job change. Resetting every poll
+  // tick while the anchor stays missing would restart the backoff from 0 and the
+  // give-up (telemetry) branch would never be reached.
+  const isNewJob = currentId !== _currentJobUrl
   _currentJobUrl = currentId
+  if (isNewJob) resetRetry()
 
-  // Ensure bar exists
-  if (!getOrCreateBar()) return
+  // Ensure bar exists; if the anchor is briefly missing, retry on a fast backoff
+  // instead of waiting for the next 1.5s poll tick.
+  if (!getOrCreateBar()) { scheduleInjectRetry(); return }
 
   // Reset button state for new job
   resetButton(_barBtn)
@@ -493,6 +577,7 @@ if (!window.__jobswiper_linkedin_loaded) {
           _bar.remove()
           _bar = null
           _currentJobUrl = ''
+          resetRetry()
         }
       } catch {
         // Extension context invalidated mid-tick
