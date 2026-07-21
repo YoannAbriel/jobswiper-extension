@@ -112,12 +112,20 @@
 .jobswiper-score.strong { background: #ecfdf5; }
 .jobswiper-score.good { background: #fffbeb; }
 .jobswiper-score.low { background: #f4f4f5; }
+.jobswiper-score.career-pivot { background: #fff1f2; }
+.jobswiper-score.fallback { background: #f4f4f5; }
 
 @media (prefers-color-scheme: dark) {
   .jobswiper-score.strong { background: #052e16; }
   .jobswiper-score.good { background: #422006; }
   .jobswiper-score.low { background: #27272a; }
+  .jobswiper-score.career-pivot { background: #4c0519; }
+  .jobswiper-score.fallback { background: #27272a; }
 }
+
+.jobswiper-score.career-pivot .jobswiper-score-num { color: #e11d48; }
+.jobswiper-score.career-pivot .jobswiper-score-label { color: #9f1239; }
+.jobswiper-score.fallback .jobswiper-score-label { color: #71717a; }
 
 .jobswiper-score-num {
   font-size: 24px;
@@ -165,6 +173,11 @@
   border-radius: 999px;
   font-size: 10px;
   font-weight: 500;
+  /* v2 chips hold whole JD requirement phrases: cap width, ellipsis the rest. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .jobswiper-skill.matched {
@@ -385,9 +398,15 @@
   border-radius: 999px;
   font-size: 10.5px;
   font-weight: 500;
+  /* v2 chips hold whole JD requirement phrases: cap width, ellipsis the rest. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .jobswiper-chip.matched { background: #d1fae5; color: #065f46; }
 .jobswiper-chip.missing { background: #ffe4e6; color: #9f1239; }
+.jobswiper-chip.more { background: #f1f5f9; color: #475569; font-weight: 600; }
 
 .jobswiper-axis-tip {
   display: flex;
@@ -480,4 +499,5 @@
   .jobswiper-axis-close:hover { background: rgba(148, 163, 184, 0.12); color: #f1f5f9; }
   .jobswiper-chip.matched { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; }
   .jobswiper-chip.missing { background: rgba(244, 63, 94, 0.15); color: #fda4af; }
+  .jobswiper-chip.more { background: rgba(148, 163, 184, 0.16); color: #cbd5e1; }
 }

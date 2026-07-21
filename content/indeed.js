@@ -7,22 +7,14 @@
  * 3. Match badges on search results list
  */
 
-const API_BASE = 'https://www.jobswiper.ai'
+// Shared helpers loaded from utils/shared.js (listed before this script in the
+// manifest). analyzeJob routes scoring through a single request shape;
+// requestValidToken pulls a refreshed token from the SW so badges survive the
+// 1h token TTL; renderBadgeIssue shows an honest 401/429 state.
+const { API_BASE, esc, analyzeJob, requestValidToken, renderBadgeIssue } = window.JobSwiperShared
 
 // i18n helper: chrome.i18n.getMessage, falls back to the key so nothing renders blank.
 const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
-
-function esc(str) {
-  const d = document.createElement('div')
-  d.textContent = str
-  return d.innerHTML
-}
-
-function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), timeoutMs)
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
-}
 
 // ============================================================================
 // Job data extraction
@@ -148,14 +140,8 @@ function showToast(msg, link) {
 // YOA-217: headless auto-import for post-install flow.
 async function autoImportCurrentJob() {
   const jobData = extractJobData()
-  let effectiveJob = jobData
-  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
-    effectiveJob = await aiExtractFallback('indeed')
-    if (!effectiveJob) {
-      return { success: false, error: 'No job data on this page' }
-    }
-  } else {
-    effectiveJob.extraction_method = 'dom'
+  if (!jobData.title || !jobData.company) {
+    return { success: false, error: 'No job data on this page' }
   }
   let { token } = await chrome.storage.local.get('token')
   if (!token) {
@@ -166,7 +152,7 @@ async function autoImportCurrentJob() {
     } catch {}
   }
   if (!token) return { success: false, error: 'Not authenticated' }
-  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
+  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
 }
 
 try {
@@ -180,27 +166,22 @@ try {
   })
 } catch {}
 
-// Stage 3: AI net, shared flow in utils/capture-flow.js.
-function aiExtractFallback(sourceName) {
-  return window.JobSwiperCapture.aiExtractFallback({ source: sourceName })
-}
-
 async function handleSave(btn, retryCount = 0) {
   btn.innerHTML = `<div class="spinner"></div> ${t('saving')}`
   btn.disabled = true
 
-  const jobData = extractJobData()
-  let effectiveJob = jobData
-  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
+  let jobData = extractJobData()
+  if (!jobData.title || !jobData.company) {
+    // Stage 3: AI net. DOM extraction came up empty, try the AI fallback
+    // before giving up (capture-3-stages).
     btn.innerHTML = `<div class="spinner"></div> ${t('smartExtraction')}`
-    effectiveJob = await aiExtractFallback('indeed')
-    if (!effectiveJob) {
+    const aiJob = await window.JobSwiperCapture.aiExtractFallback({ source: 'indeed' })
+    if (!aiJob) {
       btn.innerHTML = t('couldNotExtractRetry')
       setTimeout(() => resetButton(btn), 3000)
       return
     }
-  } else {
-    effectiveJob.extraction_method = 'dom'
+    jobData = aiJob
   }
 
   try {
@@ -223,7 +204,7 @@ async function handleSave(btn, retryCount = 0) {
     }
 
     // Use background worker for cross-origin requests (Manifest V3 requirement)
-    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
+    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
@@ -286,7 +267,7 @@ async function showAnalysisPanel() {
   // Remove existing panel
   document.querySelector('.jobswiper-panel')?.remove()
 
-  const { token } = await chrome.storage.local.get('token')
+  const token = await requestValidToken()
   if (!token) return
 
   const jobData = extractJobData()
@@ -313,14 +294,17 @@ async function showAnalysisPanel() {
 
   // Call analyze API
   try {
-    const response = await fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(jobData),
-    }, 10000)
+    const { ok, status, data } = await analyzeJob(jobData, token, 10000)
 
-    if (!response.ok) throw new Error('API error ' + response.status)
-    const data = await response.json()
+    if (!ok) {
+      const errBody = panel.querySelector('.jobswiper-panel-body')
+      errBody.innerHTML = status === 429
+        ? `<div style="text-align:center;padding:16px;color:#92400e;font-size:12px">Rate limited. Please try again in a moment.</div>`
+        : status === 401
+          ? `<div style="text-align:center;padding:16px;color:#991b1b;font-size:12px">Your session expired.<br><a href="${API_BASE}/login" target="_blank" style="color:#1e3a5f;font-weight:600">Re-open JobSwiper</a> and try again.</div>`
+          : `<div style="text-align:center;padding:16px;color:#71717a;font-size:12px">Could not analyze this job (${status}).</div>`
+      return
+    }
 
     // Render results
     const body = panel.querySelector('.jobswiper-panel-body')
@@ -332,27 +316,46 @@ async function showAnalysisPanel() {
     }
 
     // Match score (panel uses tier-class for legacy CSS hooks)
-    const tier = window.JobSwiperMatch.getMatchTier(data.match_score)
-    const tierClass = tier.tier === 'strong' ? 'strong'
-      : tier.tier === 'moderate' ? 'good'
-      : 'low'
-    body.innerHTML += `
-      <div class="jobswiper-score ${tierClass}">
-        <div>
-          <div class="jobswiper-score-num">${data.match_score}%</div>
+    if (window.JobSwiperMatch.isScoreFallback(data)) {
+      // Scoring v2 cold start: no real coverage score, prompt to complete profile.
+      body.innerHTML += `
+        <div class="jobswiper-score fallback">
+          <div>
+            <div class="jobswiper-score-label">Complete your profile to get a real match score</div>
+          </div>
         </div>
-        <div>
-          <div class="jobswiper-score-label">${tier.label}</div>
-          <div style="font-size:11px;color:#71717a;margin-top:2px">${t('skillsMatched', [String(data.matched_skills?.length || 0), String(data.keywords?.length || 0)])}</div>
+      `
+    } else {
+      const tier = window.JobSwiperMatch.getMatchTier(data.match_score)
+      const tierClass = tier.tier === 'strong' ? 'strong'
+        : tier.tier === 'moderate' ? 'good'
+        : tier.tier === 'low' ? 'low'
+        : 'career-pivot'
+      // v2 denominator is the requirement universe the server scored
+      // (met + unmet), not the raw keyword list. Hide when there is none.
+      const reqMet = data.matched_skills?.length || 0
+      const reqTotal = reqMet + (data.missing_skills?.length || 0)
+      const fractionHtml = reqTotal > 0
+        ? `<div style="font-size:11px;color:#71717a;margin-top:2px">${reqMet}/${reqTotal} requirements met</div>`
+        : ''
+      body.innerHTML += `
+        <div class="jobswiper-score ${tierClass}">
+          <div>
+            <div class="jobswiper-score-num">${data.match_score}%</div>
+          </div>
+          <div>
+            <div class="jobswiper-score-label">${tier.label}</div>
+            ${fractionHtml}
+          </div>
         </div>
-      </div>
-    `
+      `
+    }
 
     // Matched skills
     if (data.matched_skills?.length > 0) {
       body.innerHTML += `
         <div class="jobswiper-section">
-          <div class="jobswiper-section-title">${t('yourMatchingSkills')}</div>
+          <div class="jobswiper-section-title">✓ Requirements you meet</div>
           <div class="jobswiper-skills">
             ${data.matched_skills.map(s => `<span class="jobswiper-skill matched">${esc(s)}</span>`).join('')}
           </div>
@@ -364,7 +367,7 @@ async function showAnalysisPanel() {
     if (data.missing_skills?.length > 0) {
       body.innerHTML += `
         <div class="jobswiper-section">
-          <div class="jobswiper-section-title">${t('skillsToHighlight')}</div>
+          <div class="jobswiper-section-title">⚠ Requirements to address</div>
           <div class="jobswiper-skills">
             ${data.missing_skills.map(s => `<span class="jobswiper-skill missing">${esc(s)}</span>`).join('')}
           </div>
@@ -416,7 +419,7 @@ async function showAnalysisPanel() {
     if (data.profile_skills_count === 0) {
       const tip = document.createElement('div')
       tip.style.cssText = 'font-size:11px;color:#71717a;text-align:center;padding:8px;background:#f4f4f5;border-radius:8px'
-      tip.innerHTML = `${t('profileTipPrefix')}<a href="${API_BASE}/dashboard/profile" target="_blank" style="color:#0064be;font-weight:700">${t('profileTipLink')}</a>${t('profileTipSuffix')}`
+      tip.innerHTML = `${t('profileTipPrefix')}<a href="${API_BASE}/dashboard/profile" target="_blank" style="color:#1e3a5f;font-weight:600">${t('profileTipLink')}</a>${t('profileTipSuffix')}`
       body.appendChild(tip)
     }
 
@@ -472,27 +475,26 @@ function injectButton() {
     document.body.appendChild(scoreBadge)
   }
 
-  // Fetch score for inline badge
-  chrome.storage.local.get('token', ({ token }) => {
+  // Fetch score for inline badge (through the SW so a refreshed token is used).
+  ;(async () => {
+    const token = await requestValidToken()
     if (!token) { scoreBadge.remove(); return }
     const jobData = extractJobData()
-    fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(jobData),
-    }, 8000).then(r => r.json()).then(data => {
+    try {
+      const { ok, status, data } = await analyzeJob(jobData, token, 8000)
+      if (!ok) { renderBadgeIssue(scoreBadge, status); return }
       const score = data.match_score
       if (score == null) { scoreBadge.remove(); return }
 
-      window.JobSwiperMatch.applyMatchBadge(scoreBadge, score)
+      window.JobSwiperMatch.applyScoreBadge(scoreBadge, score, data)
       window.JobSwiperMatch.attachExplanationPopover(scoreBadge, score, data)
 
       if (data.already_saved) {
         btn.className = 'jobswiper-save-btn saved'
         btn.innerHTML = `${_beamHTML}${t('savedCheck')}`
       }
-    }).catch(() => scoreBadge.remove())
-  })
+    } catch { scoreBadge.remove() }
+  })()
 
   // Don't auto-show analysis panel — score is inline next to the button
 }
@@ -514,7 +516,7 @@ async function _doInjectBadges() {
   if (badgesProcessing) return
   if (window.location.pathname.includes('/viewjob')) return
 
-  const { token } = await chrome.storage.local.get('token')
+  const token = await requestValidToken()
   if (!token) return
 
   const cards = document.querySelectorAll('.job_seen_beacon, .resultContent, [data-jk]')
@@ -548,22 +550,28 @@ async function _doInjectBadges() {
     const batch = pending.slice(i, i + 5)
     await Promise.all(batch.map(async ({ title, company, location, snippet, badge }) => {
       try {
-        const res = await fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ title, company, location, description: snippet, url: '' }),
-        }, 8000)
-        if (res.ok) {
-          const data = await res.json()
-          const score = data.match_score
-          if (score == null) { badge.remove(); return }
-          const tier = window.JobSwiperMatch.getMatchTier(score)
-          badge.style.background = tier.bg
-          badge.style.color = tier.fg
-          badge.textContent = score + '%'
-          if (data.already_saved) {
-            badge.textContent = '✓ ' + score + '%'
-          }
+        const { ok, status, data } = await analyzeJob({ title, company, location, description: snippet, url: '' }, token, 8000)
+        if (!ok) {
+          // 401/429: show the shared issue state instead of a silent drop.
+          if (status === 401 || status === 429) renderBadgeIssue(badge, status)
+          else badge.remove()
+          return
+        }
+        const score = data.match_score
+        if (score == null) { badge.remove(); return }
+        // Scoring v2 cold start: neutral prompt, never a red 0% on the card.
+        if (window.JobSwiperMatch.isScoreFallback(data)) {
+          badge.style.background = '#f4f4f5'
+          badge.style.color = '#71717a'
+          badge.textContent = 'Set up profile'
+          return
+        }
+        const tier = window.JobSwiperMatch.getMatchTier(score)
+        badge.style.background = tier.bg
+        badge.style.color = tier.fg
+        badge.textContent = score + '%'
+        if (data.already_saved) {
+          badge.textContent = '✓ ' + score + '%'
         }
       } catch { badge.remove() }
     }))
@@ -611,7 +619,6 @@ setInterval(() => {
     // Button missing (Indeed re-rendered) — re-inject only if URL hasn't changed
     if (currentKey && !document.querySelector('.jobswiper-save-btn')) {
       injectButton()
-      injectedForTitle = getCurrentJobTitle()
     }
 
     injectSearchBadges()

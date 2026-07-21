@@ -6,23 +6,12 @@
  * On job change, we just update the button state — no remove/re-inject cycle.
  */
 
-const API_BASE = 'https://www.jobswiper.ai'
+// Shared helpers loaded from utils/shared.js (listed before this script in the
+// manifest, and injected before it on SPA re-injection from background.js).
+const { API_BASE, esc, analyzeJob, requestValidToken, renderBadgeIssue } = window.JobSwiperShared
 
 // i18n helper: chrome.i18n.getMessage, falls back to the key so nothing renders blank.
 const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
-
-
-function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), timeoutMs)
-  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
-}
-
-function esc(str) {
-  const d = document.createElement('div')
-  d.textContent = str
-  return d.innerHTML
-}
 
 function extractJobData() {
   const data = {}
@@ -223,14 +212,8 @@ function showToast(msg, link) {
 // flow. No UI side effects, no retry button, no toast. Just extract -> SAVE_JOB.
 async function autoImportCurrentJob() {
   const jobData = extractJobData()
-  let effectiveJob = jobData
-  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
-    effectiveJob = await aiExtractFallback()
-    if (!effectiveJob) {
-      return { success: false, error: 'No job data on this page' }
-    }
-  } else {
-    effectiveJob.extraction_method = 'dom'
+  if (!jobData.title || !jobData.company) {
+    return { success: false, error: 'No job data on this page' }
   }
   let { token } = await chrome.storage.local.get('token')
   if (!token) {
@@ -241,37 +224,25 @@ async function autoImportCurrentJob() {
     } catch {}
   }
   if (!token) return { success: false, error: 'Not authenticated' }
-  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
-}
-
-// Stage 3: AI net, shared flow in utils/capture-flow.js. Keeps the canonical
-// LinkedIn url when a job id is present.
-function aiExtractFallback() {
-  return window.JobSwiperCapture.aiExtractFallback({
-    source: 'linkedin',
-    canonicalUrl: () => {
-      const id = getLinkedInJobId()
-      return id ? `https://www.linkedin.com/jobs/view/${id}/` : null
-    },
-  })
+  return chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
 }
 
 async function handleSave(btn, retryCount = 0) {
   btn.innerHTML = `<div class="spinner"></div> ${t('saving')}`
   btn.disabled = true
 
-  const jobData = extractJobData()
-  let effectiveJob = jobData
-  if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
+  let jobData = extractJobData()
+  if (!jobData.title || !jobData.company) {
+    // Stage 3: AI net. DOM extraction came up empty, try the AI fallback
+    // before giving up (capture-3-stages).
     btn.innerHTML = `<div class="spinner"></div> ${t('smartExtraction')}`
-    effectiveJob = await aiExtractFallback()
-    if (!effectiveJob) {
+    const aiJob = await window.JobSwiperCapture.aiExtractFallback({ source: 'linkedin' })
+    if (!aiJob) {
       btn.innerHTML = t('couldNotExtractRetry')
       setTimeout(() => resetButton(btn), 3000)
       return
     }
-  } else {
-    effectiveJob.extraction_method = 'dom'
+    jobData = aiJob
   }
 
   try {
@@ -292,7 +263,7 @@ async function handleSave(btn, retryCount = 0) {
       return
     }
 
-    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: effectiveJob, token })
+    const response = await chrome.runtime.sendMessage({ type: 'SAVE_JOB', data: jobData, token })
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
@@ -354,24 +325,31 @@ let _scoreBadge = null
 let _currentJobUrl = ''
 
 function fetchInlineScore(badge) {
-  chrome.storage.local.get('token', ({ token }) => {
-    if (!token) { badge.remove(); _scoreBadge = null; return }
+  // Capture the button this fetch belongs to. On job change updateBar()
+  // replaces the badge node and resets the button, so if `badge` is no longer
+  // connected when the response lands we navigated away and must NOT label the
+  // new job "Saved" from the old job's response (stale-closure mislabel, #5).
+  const btnForThisFetch = _barBtn
+  ;(async () => {
+    const token = await requestValidToken()
+    if (!token) { badge.remove(); if (_scoreBadge === badge) _scoreBadge = null; return }
     const jobData = extractJobData()
-    fetchWithTimeout(`${API_BASE}/api/extension/analyze-job`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify(jobData),
-    }, 8000).then(r => r.json()).then(data => {
+    try {
+      const { ok, status, data } = await analyzeJob(jobData, token, 8000)
+      if (!badge.isConnected) return // navigated to another job mid-flight
+      if (!ok) { renderBadgeIssue(badge, status); return }
       const score = data.match_score
-      if (score == null) { badge.remove(); _scoreBadge = null; return }
-      window.JobSwiperMatch.applyMatchBadge(badge, score)
+      if (score == null) { badge.remove(); if (_scoreBadge === badge) _scoreBadge = null; return }
+      window.JobSwiperMatch.applyScoreBadge(badge, score, data)
       window.JobSwiperMatch.attachExplanationPopover(badge, score, data)
-      if (data.already_saved) {
-        _barBtn.className = 'jobswiper-save-btn saved'
-        _barBtn.innerHTML = `${_beamHTML}${t('savedCheck')}`
+      if (data.already_saved && btnForThisFetch && btnForThisFetch === _barBtn && btnForThisFetch.isConnected) {
+        btnForThisFetch.className = 'jobswiper-save-btn saved'
+        btnForThisFetch.innerHTML = `${_beamHTML}${t('savedCheck')}`
       }
-    }).catch(() => { badge.remove(); _scoreBadge = null })
-  })
+    } catch {
+      if (badge.isConnected) { badge.remove(); if (_scoreBadge === badge) _scoreBadge = null }
+    }
+  })()
 }
 
 // YOA-238 follow-up: LinkedIn renders job detail in (now open thanks to
@@ -573,11 +551,9 @@ if (!window.__jobswiper_linkedin_loaded) {
   // which the patch runs at document_start before LinkedIn's bundle and the
   // anchor becomes reachable.
   let _reloadAttempts = 0
-  const _reloadTimer = setInterval(async () => {
+  const _reloadTimer = setInterval(() => {
     if (!chrome.runtime?.id) { clearInterval(_reloadTimer); return }
     try {
-      const { disableReloadHack } = await chrome.storage.local.get('disableReloadHack')
-      if (disableReloadHack) { clearInterval(_reloadTimer); return }
       if (window.sessionStorage.getItem('__jobswiper_reload_done') === '1') {
         clearInterval(_reloadTimer)
         return

@@ -1,114 +1,326 @@
 {
-  "appName": { "message": "JobSwiper: AI job prep" },
-  "appDesc": { "message": "Save jobs from Indeed, LinkedIn, Glassdoor and 10+ job boards. Generate tailored CVs, cover letters and interview prep with AI." },
-
-  "tagline": { "message": "AI job prep, right where you apply" },
-  "statusNotConnected": { "message": "Not connected" },
-  "loginPrompt": { "message": "Log in to connect your account and start saving jobs." },
-  "openAndConnect": { "message": "Open JobSwiper and connect" },
-  "alreadyLoggedIn": { "message": "Already logged in? Connect" },
-  "statusConnected": { "message": "Connected" },
-  "statSaved": { "message": "Saved" },
-  "statApplied": { "message": "Applied" },
-  "profile": { "message": "Profile" },
-  "recentSaves": { "message": "Recent saves" },
-  "loading": { "message": "Loading..." },
-  "savePageCta": { "message": "Save this page to JobSwiper" },
-  "mySavedJobs": { "message": "My saved jobs" },
-  "browseIndeed": { "message": "Browse Indeed" },
-  "browseLinkedIn": { "message": "Browse LinkedIn" },
-  "disconnect": { "message": "Disconnect" },
-
-  "connecting": { "message": "Connecting..." },
-  "openingJobswiper": { "message": "Opening JobSwiper..." },
-  "noSavedJobs": { "message": "No saved jobs yet" },
-  "couldNotLoadStats": { "message": "Could not load stats" },
-  "pageCannotBeCaptured": { "message": "This page cannot be captured" },
-  "notOnLinkedInFeed": { "message": "Not available on LinkedIn feed, messages or notifications. Open the job page itself." },
-  "notAJobPosting": { "message": "This page does not look like a job posting." },
-  "notClearlyJobConfirm": { "message": "This page does not clearly look like a job posting. Send it anyway?" },
-  "pageSentNotice": { "message": "Page content is sent to JobSwiper AI to extract the job." },
-  "extracting": { "message": "Extracting..." },
-  "savedExclaimPlain": { "message": "Saved!" },
-  "couldNotExtractJob": { "message": "Could not extract a job from this page" },
-  "saveFailed": { "message": "Save failed" },
+  "appName": {
+    "message": "JobSwiper: AI job prep"
+  },
+  "appDesc": {
+    "message": "Save jobs from Indeed, LinkedIn, Glassdoor and 10+ job boards. Generate tailored CVs, cover letters and interview prep with AI."
+  },
+  "tagline": {
+    "message": "AI job prep, right where you apply"
+  },
+  "statusNotConnected": {
+    "message": "Not connected"
+  },
+  "loginPrompt": {
+    "message": "Log in to connect your account and start saving jobs."
+  },
+  "openAndConnect": {
+    "message": "Open JobSwiper and connect"
+  },
+  "alreadyLoggedIn": {
+    "message": "Already logged in? Connect"
+  },
+  "statusConnected": {
+    "message": "Connected"
+  },
+  "statSaved": {
+    "message": "Saved"
+  },
+  "statApplied": {
+    "message": "Applied"
+  },
+  "profile": {
+    "message": "Profile"
+  },
+  "recentSaves": {
+    "message": "Recent saves"
+  },
+  "loading": {
+    "message": "Loading..."
+  },
+  "savePageCta": {
+    "message": "Save this page to JobSwiper"
+  },
+  "mySavedJobs": {
+    "message": "My saved jobs"
+  },
+  "browseIndeed": {
+    "message": "Browse Indeed"
+  },
+  "browseLinkedIn": {
+    "message": "Browse LinkedIn"
+  },
+  "disconnect": {
+    "message": "Disconnect"
+  },
+  "connecting": {
+    "message": "Connecting..."
+  },
+  "openingJobswiper": {
+    "message": "Opening JobSwiper..."
+  },
+  "noSavedJobs": {
+    "message": "No saved jobs yet"
+  },
+  "couldNotLoadStats": {
+    "message": "Could not load stats"
+  },
+  "pageCannotBeCaptured": {
+    "message": "This page cannot be captured"
+  },
+  "notOnLinkedInFeed": {
+    "message": "Not available on LinkedIn feed, messages or notifications. Open the job page itself."
+  },
+  "notAJobPosting": {
+    "message": "This page does not look like a job posting."
+  },
+  "notClearlyJobConfirm": {
+    "message": "This page does not clearly look like a job posting. Send it anyway?"
+  },
+  "pageSentNotice": {
+    "message": "Page content is sent to JobSwiper AI to extract the job."
+  },
+  "extracting": {
+    "message": "Extracting..."
+  },
+  "savedExclaimPlain": {
+    "message": "Saved!"
+  },
+  "couldNotExtractJob": {
+    "message": "Could not extract a job from this page"
+  },
+  "saveFailed": {
+    "message": "Save failed"
+  },
   "jobAtCompany": {
     "message": "$title$ at $company$",
-    "placeholders": { "title": { "content": "$1" }, "company": { "content": "$2" } }
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      },
+      "company": {
+        "content": "$2"
+      }
+    }
   },
-
-  "saveToJobswiper": { "message": "Save to JobSwiper" },
-  "saving": { "message": "Saving..." },
-  "smartExtraction": { "message": "Smart extraction..." },
-  "couldNotExtractRetry": { "message": "⚠️ Could not extract, open the job page and retry" },
-  "loginFirst": { "message": "🔒 Log in first" },
-  "reconnectInPopup": { "message": "🔒 Reconnect in popup" },
-  "savedCheckExclaim": { "message": "✓ Saved!" },
-  "savedCheck": { "message": "✓ Saved" },
-  "loginToJobswiperFirst": { "message": "Log in to JobSwiper first" },
-  "jobSaved": { "message": "Job saved!" },
-  "failed": { "message": "Failed" },
-  "errorWord": { "message": "Error" },
-  "couldNotConnect": { "message": "Could not connect to JobSwiper" },
+  "saveToJobswiper": {
+    "message": "Save to JobSwiper"
+  },
+  "saving": {
+    "message": "Saving..."
+  },
+  "smartExtraction": {
+    "message": "Smart extraction..."
+  },
+  "couldNotExtractRetry": {
+    "message": "⚠️ Could not extract, open the job page and retry"
+  },
+  "loginFirst": {
+    "message": "🔒 Log in first"
+  },
+  "reconnectInPopup": {
+    "message": "🔒 Reconnect in popup"
+  },
+  "savedCheckExclaim": {
+    "message": "✓ Saved!"
+  },
+  "savedCheck": {
+    "message": "✓ Saved"
+  },
+  "loginToJobswiperFirst": {
+    "message": "Log in to JobSwiper first"
+  },
+  "jobSaved": {
+    "message": "Job saved!"
+  },
+  "failed": {
+    "message": "Failed"
+  },
+  "errorWord": {
+    "message": "Error"
+  },
+  "couldNotConnect": {
+    "message": "Could not connect to JobSwiper"
+  },
   "toastErrorPrefix": {
     "message": "Error: $msg$",
-    "placeholders": { "msg": { "content": "$1" } }
+    "placeholders": {
+      "msg": {
+        "content": "$1"
+      }
+    }
   },
-  "open": { "message": "Open" },
-  "openInJobswiper": { "message": "Open in JobSwiper" },
-
-  "panelAnalysis": { "message": "Analysis" },
-  "analyzingJob": { "message": "Analyzing job..." },
-  "alreadySavedPipeline": { "message": "✓ Already saved to your pipeline" },
-  "yourMatchingSkills": { "message": "✓ Your matching skills" },
-  "skillsToHighlight": { "message": "⚠ Skills to highlight" },
-  "yourNotes": { "message": "Your notes" },
-  "addNotePlaceholder": { "message": "Add a note about this job..." },
+  "open": {
+    "message": "Open"
+  },
+  "openInJobswiper": {
+    "message": "Open in JobSwiper"
+  },
+  "panelAnalysis": {
+    "message": "Analysis"
+  },
+  "analyzingJob": {
+    "message": "Analyzing job..."
+  },
+  "alreadySavedPipeline": {
+    "message": "✓ Already saved to your pipeline"
+  },
+  "yourMatchingSkills": {
+    "message": "✓ Your matching skills"
+  },
+  "skillsToHighlight": {
+    "message": "⚠ Skills to highlight"
+  },
+  "yourNotes": {
+    "message": "Your notes"
+  },
+  "addNotePlaceholder": {
+    "message": "Add a note about this job..."
+  },
   "skillsMatched": {
     "message": "$matched$/$total$ skills matched",
-    "placeholders": { "matched": { "content": "$1" }, "total": { "content": "$2" } }
+    "placeholders": {
+      "matched": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
   },
-  "profileTipPrefix": { "message": "💡 Add skills to your " },
-  "profileTipLink": { "message": "profile" },
-  "profileTipSuffix": { "message": " for better match scores" },
-  "couldNotAnalyze": { "message": "Could not analyze this job." },
-
-  "tierExcellent": { "message": "Excellent Match" },
-  "tierGood": { "message": "Good Match" },
-  "tierStretch": { "message": "Stretch Match" },
-  "tierCareerPivot": { "message": "Career Pivot" },
-  "why": { "message": "Why?" },
+  "profileTipPrefix": {
+    "message": "💡 Add skills to your "
+  },
+  "profileTipLink": {
+    "message": "profile"
+  },
+  "profileTipSuffix": {
+    "message": " for better match scores"
+  },
+  "couldNotAnalyze": {
+    "message": "Could not analyze this job."
+  },
+  "tierExcellent": {
+    "message": "Excellent Match"
+  },
+  "tierGood": {
+    "message": "Good Match"
+  },
+  "tierStretch": {
+    "message": "Stretch Match"
+  },
+  "tierCareerPivot": {
+    "message": "Career Pivot"
+  },
+  "why": {
+    "message": "Why?"
+  },
   "scoreTierTooltip": {
     "message": "$score$% · $tier$. Click for details.",
-    "placeholders": { "score": { "content": "$1" }, "tier": { "content": "$2" } }
+    "placeholders": {
+      "score": {
+        "content": "$1"
+      },
+      "tier": {
+        "content": "$2"
+      }
+    }
   },
-  "axisSkills": { "message": "Skills" },
-  "axisExperience": { "message": "Experience" },
-  "axisContractType": { "message": "Contract type" },
-  "axisLocation": { "message": "Location" },
-  "axisIndustry": { "message": "Industry" },
-  "axisCompanySize": { "message": "Company size" },
-  "whyThisScore": { "message": "Why this score?" },
-  "emptyGeneratingTitle": { "message": "Generating your personalised explanation" },
-  "emptySaveTitle": { "message": "Save the job to see why" },
-  "emptyGeneratingSub": { "message": "Open the job in your dashboard to trigger the AI explanation. We cache it the first time you view the detail page." },
-  "emptySaveSub": { "message": "Once saved, the AI breaks the score down into 6 axes (skills, experience, contract, location, industry, company size) with tips you can act on." },
-  "openDashboard": { "message": "Open dashboard" },
-  "openJobswiper": { "message": "Open JobSwiper" },
-  "openInDashboard": { "message": "Open in dashboard →" },
-  "tip": { "message": "Tip" },
-
-  "autofillWithJobswiper": { "message": "Auto-fill with JobSwiper" },
+  "axisSkills": {
+    "message": "Skills"
+  },
+  "axisExperience": {
+    "message": "Experience"
+  },
+  "axisContractType": {
+    "message": "Contract type"
+  },
+  "axisLocation": {
+    "message": "Location"
+  },
+  "axisIndustry": {
+    "message": "Industry"
+  },
+  "axisCompanySize": {
+    "message": "Company size"
+  },
+  "whyThisScore": {
+    "message": "Why this score?"
+  },
+  "emptyGeneratingTitle": {
+    "message": "Generating your personalised explanation"
+  },
+  "emptySaveTitle": {
+    "message": "Save the job to see why"
+  },
+  "emptyGeneratingSub": {
+    "message": "Open the job in your dashboard to trigger the AI explanation. We cache it the first time you view the detail page."
+  },
+  "emptySaveSub": {
+    "message": "Once saved, the AI breaks the score down into 6 axes (skills, experience, contract, location, industry, company size) with tips you can act on."
+  },
+  "openDashboard": {
+    "message": "Open dashboard"
+  },
+  "openJobswiper": {
+    "message": "Open JobSwiper"
+  },
+  "openInDashboard": {
+    "message": "Open in dashboard →"
+  },
+  "tip": {
+    "message": "Tip"
+  },
+  "autofillWithJobswiper": {
+    "message": "Auto-fill with JobSwiper"
+  },
   "autofilledFields": {
     "message": "✅ Auto-filled $count$ fields",
-    "placeholders": { "count": { "content": "$1" } }
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   },
-
-  "installedTitle": { "message": "JobSwiper installed" },
-  "installedBody": { "message": "Open any job on LinkedIn, Indeed, or JobUp and it'll save automatically." },
-  "reminderTitle": { "message": "JobSwiper Reminder" },
+  "installedTitle": {
+    "message": "JobSwiper installed"
+  },
+  "installedBody": {
+    "message": "Open any job on LinkedIn, Indeed, or JobUp and it'll save automatically."
+  },
+  "reminderTitle": {
+    "message": "JobSwiper Reminder"
+  },
   "reminderBody": {
     "message": "You saved \"$title$\" at $company$ 3 days ago. Ready to apply?",
-    "placeholders": { "title": { "content": "$1" }, "company": { "content": "$2" } }
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      },
+      "company": {
+        "content": "$2"
+      }
+    }
+  },
+  "completeYourProfile": {
+    "message": "Complete your profile"
+  },
+  "setUpProfile": {
+    "message": "Set up profile"
+  },
+  "tierProfileIncomplete": {
+    "message": "Profile incomplete"
+  },
+  "fallbackBadgeTitle": {
+    "message": "Complete your profile to get a real match score."
+  },
+  "fallbackHeadline": {
+    "message": "Complete your profile to get a real match score"
+  },
+  "fallbackSub": {
+    "message": "Add your skills and experience so we can measure how well you cover this job's requirements."
+  },
+  "completeProfile": {
+    "message": "Complete profile"
   }
 }

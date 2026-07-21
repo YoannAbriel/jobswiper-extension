@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_appName__",
-  "version": "1.1.0",
+  "version": "1.1.3",
   "description": "__MSG_appDesc__",
   "default_locale": "en",
   "minimum_chrome_version": "120",
@@ -64,7 +64,7 @@
         "https://*.indeed.ca/*",
         "https://*.indeed.com.au/*"
       ],
-      "js": ["utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/indeed.js"],
+      "js": ["utils/shared.js", "utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/indeed.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -82,7 +82,7 @@
         "https://*.linkedin.com/jobs/*",
         "https://*.linkedin.com/comm/jobs/*"
       ],
-      "js": ["utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/linkedin.js"],
+      "js": ["utils/shared.js", "utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/linkedin.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -91,7 +91,7 @@
         "https://*.jobup.ch/*",
         "https://*.jobs.ch/*"
       ],
-      "js": ["utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/jobup.js"],
+      "js": ["utils/shared.js", "utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/jobup.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -99,7 +99,7 @@
       "matches": [
         "https://*.welcometothejungle.com/*"
       ],
-      "js": ["utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/wttj.js"],
+      "js": ["utils/shared.js", "utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/wttj.js"],
       "css": ["content/jobswiper.css", "content/overlay.css"],
       "run_at": "document_idle"
     },
@@ -126,7 +126,7 @@
         "https://*.bamboohr.com/*",
         "https://*.jazz.co/*"
       ],
-      "js": ["content/autofill.js"],
+      "js": ["content/apply-shared.js", "content/autofill.js", "content/cv-attach.js"],
       "css": ["content/jobswiper.css"],
       "run_at": "document_idle"
     }

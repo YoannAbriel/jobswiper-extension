@@ -9,6 +9,10 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
+// #6: version negotiation header. Popup runs in an extension-origin context, so
+// requests to the app are CORS-exempt and a custom header is safe here.
+const EXT_VERSION = (() => { try { return chrome.runtime.getManifest().version } catch { return '' } })()
+
 // i18n: chrome.i18n.getMessage, falls back to the key so nothing renders blank.
 const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
 
@@ -67,7 +71,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (token) {
     try {
       const res = await fetchWithTimeout(`${API_BASE}/api/extension/stats`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 'Authorization': `Bearer ${token}`, 'X-JobSwiper-Ext-Version': EXT_VERSION },
       }, 8000)
       if (res.ok) { showLoggedIn(token); return }
     } catch {}
@@ -110,6 +114,7 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
   try {
     const res = await fetchWithTimeout(`${API_BASE}/api/extension/auth`, {
       credentials: 'include',
+      headers: { 'X-JobSwiper-Ext-Version': EXT_VERSION },
     }, 10000)
     if (res.ok) {
       const data = await res.json()
@@ -128,6 +133,7 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
             token: data.token,
             refresh_token: data.refresh_token ?? null,
             expires_at: data.expires_at ?? null,
+            session_independent: true,
           })
         }
         showLoggedIn(data.token)

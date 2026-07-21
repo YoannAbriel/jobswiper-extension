@@ -1,114 +1,326 @@
 {
-  "appName": { "message": "JobSwiper : préparation d'emploi par IA" },
-  "appDesc": { "message": "Enregistrez des offres depuis Indeed, LinkedIn, Glassdoor et plus de 10 sites d'emploi. Générez des CV, lettres de motivation et préparations d'entretien sur mesure grâce à l'IA." },
-
-  "tagline": { "message": "La préparation d'emploi par IA, là où vous postulez" },
-  "statusNotConnected": { "message": "Non connecté" },
-  "loginPrompt": { "message": "Connectez-vous pour lier votre compte et commencer à enregistrer des offres." },
-  "openAndConnect": { "message": "Ouvrir JobSwiper et se connecter" },
-  "alreadyLoggedIn": { "message": "Déjà connecté ? Se connecter" },
-  "statusConnected": { "message": "Connecté" },
-  "statSaved": { "message": "Enregistrées" },
-  "statApplied": { "message": "Candidatures" },
-  "profile": { "message": "Profil" },
-  "recentSaves": { "message": "Enregistrements récents" },
-  "loading": { "message": "Chargement..." },
-  "savePageCta": { "message": "Enregistrer cette page dans JobSwiper" },
-  "mySavedJobs": { "message": "Mes offres enregistrées" },
-  "browseIndeed": { "message": "Parcourir Indeed" },
-  "browseLinkedIn": { "message": "Parcourir LinkedIn" },
-  "disconnect": { "message": "Se déconnecter" },
-
-  "connecting": { "message": "Connexion..." },
-  "openingJobswiper": { "message": "Ouverture de JobSwiper..." },
-  "noSavedJobs": { "message": "Aucune offre enregistrée pour l'instant" },
-  "couldNotLoadStats": { "message": "Impossible de charger les statistiques" },
-  "pageCannotBeCaptured": { "message": "Cette page ne peut pas être capturée" },
-  "notOnLinkedInFeed": { "message": "Indisponible sur le fil, les messages ou les notifications LinkedIn. Ouvrez la page de l'offre." },
-  "notAJobPosting": { "message": "Cette page ne ressemble pas à une offre d'emploi." },
-  "notClearlyJobConfirm": { "message": "Cette page ne ressemble pas clairement à une offre d'emploi. L'envoyer quand même ?" },
-  "pageSentNotice": { "message": "Le contenu de la page est envoyé à l'IA de JobSwiper pour extraire l'offre." },
-  "extracting": { "message": "Extraction..." },
-  "savedExclaimPlain": { "message": "Enregistré !" },
-  "couldNotExtractJob": { "message": "Impossible d'extraire une offre de cette page" },
-  "saveFailed": { "message": "Échec de l'enregistrement" },
+  "appName": {
+    "message": "JobSwiper : préparation d'emploi par IA"
+  },
+  "appDesc": {
+    "message": "Enregistrez des offres depuis Indeed, LinkedIn, Glassdoor et plus de 10 sites d'emploi. Générez des CV, lettres de motivation et préparations d'entretien sur mesure grâce à l'IA."
+  },
+  "tagline": {
+    "message": "La préparation d'emploi par IA, là où vous postulez"
+  },
+  "statusNotConnected": {
+    "message": "Non connecté"
+  },
+  "loginPrompt": {
+    "message": "Connectez-vous pour lier votre compte et commencer à enregistrer des offres."
+  },
+  "openAndConnect": {
+    "message": "Ouvrir JobSwiper et se connecter"
+  },
+  "alreadyLoggedIn": {
+    "message": "Déjà connecté ? Se connecter"
+  },
+  "statusConnected": {
+    "message": "Connecté"
+  },
+  "statSaved": {
+    "message": "Enregistrées"
+  },
+  "statApplied": {
+    "message": "Candidatures"
+  },
+  "profile": {
+    "message": "Profil"
+  },
+  "recentSaves": {
+    "message": "Enregistrements récents"
+  },
+  "loading": {
+    "message": "Chargement..."
+  },
+  "savePageCta": {
+    "message": "Enregistrer cette page dans JobSwiper"
+  },
+  "mySavedJobs": {
+    "message": "Mes offres enregistrées"
+  },
+  "browseIndeed": {
+    "message": "Parcourir Indeed"
+  },
+  "browseLinkedIn": {
+    "message": "Parcourir LinkedIn"
+  },
+  "disconnect": {
+    "message": "Se déconnecter"
+  },
+  "connecting": {
+    "message": "Connexion..."
+  },
+  "openingJobswiper": {
+    "message": "Ouverture de JobSwiper..."
+  },
+  "noSavedJobs": {
+    "message": "Aucune offre enregistrée pour l'instant"
+  },
+  "couldNotLoadStats": {
+    "message": "Impossible de charger les statistiques"
+  },
+  "pageCannotBeCaptured": {
+    "message": "Cette page ne peut pas être capturée"
+  },
+  "notOnLinkedInFeed": {
+    "message": "Indisponible sur le fil, les messages ou les notifications LinkedIn. Ouvrez la page de l'offre."
+  },
+  "notAJobPosting": {
+    "message": "Cette page ne ressemble pas à une offre d'emploi."
+  },
+  "notClearlyJobConfirm": {
+    "message": "Cette page ne ressemble pas clairement à une offre d'emploi. L'envoyer quand même ?"
+  },
+  "pageSentNotice": {
+    "message": "Le contenu de la page est envoyé à l'IA de JobSwiper pour extraire l'offre."
+  },
+  "extracting": {
+    "message": "Extraction..."
+  },
+  "savedExclaimPlain": {
+    "message": "Enregistré !"
+  },
+  "couldNotExtractJob": {
+    "message": "Impossible d'extraire une offre de cette page"
+  },
+  "saveFailed": {
+    "message": "Échec de l'enregistrement"
+  },
   "jobAtCompany": {
     "message": "$title$ chez $company$",
-    "placeholders": { "title": { "content": "$1" }, "company": { "content": "$2" } }
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      },
+      "company": {
+        "content": "$2"
+      }
+    }
   },
-
-  "saveToJobswiper": { "message": "Enregistrer dans JobSwiper" },
-  "saving": { "message": "Enregistrement..." },
-  "smartExtraction": { "message": "Extraction intelligente..." },
-  "couldNotExtractRetry": { "message": "⚠️ Extraction impossible, ouvrez la page de l'offre et réessayez" },
-  "loginFirst": { "message": "🔒 Connectez-vous d'abord" },
-  "reconnectInPopup": { "message": "🔒 Reconnectez-vous dans la fenêtre" },
-  "savedCheckExclaim": { "message": "✓ Enregistré !" },
-  "savedCheck": { "message": "✓ Enregistré" },
-  "loginToJobswiperFirst": { "message": "Connectez-vous d'abord à JobSwiper" },
-  "jobSaved": { "message": "Offre enregistrée !" },
-  "failed": { "message": "Échec" },
-  "errorWord": { "message": "Erreur" },
-  "couldNotConnect": { "message": "Impossible de se connecter à JobSwiper" },
+  "saveToJobswiper": {
+    "message": "Enregistrer dans JobSwiper"
+  },
+  "saving": {
+    "message": "Enregistrement..."
+  },
+  "smartExtraction": {
+    "message": "Extraction intelligente..."
+  },
+  "couldNotExtractRetry": {
+    "message": "⚠️ Extraction impossible, ouvrez la page de l'offre et réessayez"
+  },
+  "loginFirst": {
+    "message": "🔒 Connectez-vous d'abord"
+  },
+  "reconnectInPopup": {
+    "message": "🔒 Reconnectez-vous dans la fenêtre"
+  },
+  "savedCheckExclaim": {
+    "message": "✓ Enregistré !"
+  },
+  "savedCheck": {
+    "message": "✓ Enregistré"
+  },
+  "loginToJobswiperFirst": {
+    "message": "Connectez-vous d'abord à JobSwiper"
+  },
+  "jobSaved": {
+    "message": "Offre enregistrée !"
+  },
+  "failed": {
+    "message": "Échec"
+  },
+  "errorWord": {
+    "message": "Erreur"
+  },
+  "couldNotConnect": {
+    "message": "Impossible de se connecter à JobSwiper"
+  },
   "toastErrorPrefix": {
     "message": "Erreur : $msg$",
-    "placeholders": { "msg": { "content": "$1" } }
+    "placeholders": {
+      "msg": {
+        "content": "$1"
+      }
+    }
   },
-  "open": { "message": "Ouvrir" },
-  "openInJobswiper": { "message": "Ouvrir dans JobSwiper" },
-
-  "panelAnalysis": { "message": "Analyse" },
-  "analyzingJob": { "message": "Analyse de l'offre..." },
-  "alreadySavedPipeline": { "message": "✓ Déjà dans votre pipeline" },
-  "yourMatchingSkills": { "message": "✓ Vos compétences correspondantes" },
-  "skillsToHighlight": { "message": "⚠ Compétences à mettre en avant" },
-  "yourNotes": { "message": "Vos notes" },
-  "addNotePlaceholder": { "message": "Ajoutez une note sur cette offre..." },
+  "open": {
+    "message": "Ouvrir"
+  },
+  "openInJobswiper": {
+    "message": "Ouvrir dans JobSwiper"
+  },
+  "panelAnalysis": {
+    "message": "Analyse"
+  },
+  "analyzingJob": {
+    "message": "Analyse de l'offre..."
+  },
+  "alreadySavedPipeline": {
+    "message": "✓ Déjà dans votre pipeline"
+  },
+  "yourMatchingSkills": {
+    "message": "✓ Vos compétences correspondantes"
+  },
+  "skillsToHighlight": {
+    "message": "⚠ Compétences à mettre en avant"
+  },
+  "yourNotes": {
+    "message": "Vos notes"
+  },
+  "addNotePlaceholder": {
+    "message": "Ajoutez une note sur cette offre..."
+  },
   "skillsMatched": {
     "message": "$matched$/$total$ compétences correspondent",
-    "placeholders": { "matched": { "content": "$1" }, "total": { "content": "$2" } }
+    "placeholders": {
+      "matched": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
   },
-  "profileTipPrefix": { "message": "💡 Ajoutez des compétences à votre " },
-  "profileTipLink": { "message": "profil" },
-  "profileTipSuffix": { "message": " pour de meilleurs scores de correspondance" },
-  "couldNotAnalyze": { "message": "Impossible d'analyser cette offre." },
-
-  "tierExcellent": { "message": "Correspondance excellente" },
-  "tierGood": { "message": "Bonne correspondance" },
-  "tierStretch": { "message": "Correspondance ambitieuse" },
-  "tierCareerPivot": { "message": "Reconversion" },
-  "why": { "message": "Pourquoi ?" },
+  "profileTipPrefix": {
+    "message": "💡 Ajoutez des compétences à votre "
+  },
+  "profileTipLink": {
+    "message": "profil"
+  },
+  "profileTipSuffix": {
+    "message": " pour de meilleurs scores de correspondance"
+  },
+  "couldNotAnalyze": {
+    "message": "Impossible d'analyser cette offre."
+  },
+  "tierExcellent": {
+    "message": "Correspondance excellente"
+  },
+  "tierGood": {
+    "message": "Bonne correspondance"
+  },
+  "tierStretch": {
+    "message": "Correspondance ambitieuse"
+  },
+  "tierCareerPivot": {
+    "message": "Reconversion"
+  },
+  "why": {
+    "message": "Pourquoi ?"
+  },
   "scoreTierTooltip": {
     "message": "$score$% · $tier$. Cliquez pour les détails.",
-    "placeholders": { "score": { "content": "$1" }, "tier": { "content": "$2" } }
+    "placeholders": {
+      "score": {
+        "content": "$1"
+      },
+      "tier": {
+        "content": "$2"
+      }
+    }
   },
-  "axisSkills": { "message": "Compétences" },
-  "axisExperience": { "message": "Expérience" },
-  "axisContractType": { "message": "Type de contrat" },
-  "axisLocation": { "message": "Lieu" },
-  "axisIndustry": { "message": "Secteur" },
-  "axisCompanySize": { "message": "Taille de l'entreprise" },
-  "whyThisScore": { "message": "Pourquoi ce score ?" },
-  "emptyGeneratingTitle": { "message": "Génération de votre explication personnalisée" },
-  "emptySaveTitle": { "message": "Enregistrez l'offre pour voir pourquoi" },
-  "emptyGeneratingSub": { "message": "Ouvrez l'offre dans votre tableau de bord pour déclencher l'explication par IA. Elle est mise en cache dès la première consultation de la page détaillée." },
-  "emptySaveSub": { "message": "Une fois enregistrée, l'IA décompose le score en 6 axes (compétences, expérience, contrat, lieu, secteur, taille de l'entreprise) avec des conseils concrets." },
-  "openDashboard": { "message": "Ouvrir le tableau de bord" },
-  "openJobswiper": { "message": "Ouvrir JobSwiper" },
-  "openInDashboard": { "message": "Ouvrir dans le tableau de bord →" },
-  "tip": { "message": "Conseil" },
-
-  "autofillWithJobswiper": { "message": "Remplir avec JobSwiper" },
+  "axisSkills": {
+    "message": "Compétences"
+  },
+  "axisExperience": {
+    "message": "Expérience"
+  },
+  "axisContractType": {
+    "message": "Type de contrat"
+  },
+  "axisLocation": {
+    "message": "Lieu"
+  },
+  "axisIndustry": {
+    "message": "Secteur"
+  },
+  "axisCompanySize": {
+    "message": "Taille de l'entreprise"
+  },
+  "whyThisScore": {
+    "message": "Pourquoi ce score ?"
+  },
+  "emptyGeneratingTitle": {
+    "message": "Génération de votre explication personnalisée"
+  },
+  "emptySaveTitle": {
+    "message": "Enregistrez l'offre pour voir pourquoi"
+  },
+  "emptyGeneratingSub": {
+    "message": "Ouvrez l'offre dans votre tableau de bord pour déclencher l'explication par IA. Elle est mise en cache dès la première consultation de la page détaillée."
+  },
+  "emptySaveSub": {
+    "message": "Une fois enregistrée, l'IA décompose le score en 6 axes (compétences, expérience, contrat, lieu, secteur, taille de l'entreprise) avec des conseils concrets."
+  },
+  "openDashboard": {
+    "message": "Ouvrir le tableau de bord"
+  },
+  "openJobswiper": {
+    "message": "Ouvrir JobSwiper"
+  },
+  "openInDashboard": {
+    "message": "Ouvrir dans le tableau de bord →"
+  },
+  "tip": {
+    "message": "Conseil"
+  },
+  "autofillWithJobswiper": {
+    "message": "Remplir avec JobSwiper"
+  },
   "autofilledFields": {
     "message": "✅ $count$ champs remplis",
-    "placeholders": { "count": { "content": "$1" } }
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   },
-
-  "installedTitle": { "message": "JobSwiper installé" },
-  "installedBody": { "message": "Ouvrez une offre sur LinkedIn, Indeed ou JobUp et elle s'enregistrera automatiquement." },
-  "reminderTitle": { "message": "Rappel JobSwiper" },
+  "installedTitle": {
+    "message": "JobSwiper installé"
+  },
+  "installedBody": {
+    "message": "Ouvrez une offre sur LinkedIn, Indeed ou JobUp et elle s'enregistrera automatiquement."
+  },
+  "reminderTitle": {
+    "message": "Rappel JobSwiper"
+  },
   "reminderBody": {
     "message": "Vous avez enregistré \"$title$\" chez $company$ il y a 3 jours. Prêt à postuler ?",
-    "placeholders": { "title": { "content": "$1" }, "company": { "content": "$2" } }
+    "placeholders": {
+      "title": {
+        "content": "$1"
+      },
+      "company": {
+        "content": "$2"
+      }
+    }
+  },
+  "completeYourProfile": {
+    "message": "Complétez votre profil"
+  },
+  "setUpProfile": {
+    "message": "Configurer le profil"
+  },
+  "tierProfileIncomplete": {
+    "message": "Profil incomplet"
+  },
+  "fallbackBadgeTitle": {
+    "message": "Complétez votre profil pour obtenir un vrai score."
+  },
+  "fallbackHeadline": {
+    "message": "Complétez votre profil pour obtenir un vrai score de correspondance"
+  },
+  "fallbackSub": {
+    "message": "Ajoutez vos compétences et votre expérience pour que nous puissions mesurer votre adéquation aux exigences de cette offre."
+  },
+  "completeProfile": {
+    "message": "Compléter le profil"
   }
 }
