@@ -1,3 +1,12 @@
+/* Brand tokens (kept in sync with content/overlay.css and popup/popup.html).
+   Brand blue = #0064be. */
+:root {
+  --js-blue: #0064be;
+  --js-ink: #18181b;
+  --js-emerald: #059669;
+  --js-toast-link: #7db8f0;
+}
+
 /* Logo wrapper */
 .jobswiper-logo-wrap {
   display: inline-flex;
@@ -33,7 +42,7 @@
 .jobswiper-beam > div {
   position: absolute;
   inset: -100%;
-  background: conic-gradient(from 0deg, transparent 0%, #93c5fd 5%, #60a5fa 10%, #2563eb 18%, #1e3a5f 28%, transparent 40%, transparent 100%);
+  background: conic-gradient(from 0deg, transparent 0%, #a9d0f5 5%, #5aa2e6 11%, #0064be 22%, transparent 38%, transparent 100%);
   animation: jobswiper-beam-spin 5s linear infinite;
   will-change: transform;
 }
@@ -72,7 +81,7 @@
 }
 
 .jobswiper-save-btn.saved {
-  background: #057642;
+  background: var(--js-emerald);
   color: white;
   cursor: default;
 }
@@ -105,7 +114,7 @@
   position: fixed;
   bottom: 16px;
   right: 16px;
-  background: #1e3a5f;
+  background: var(--js-ink);
   color: white;
   padding: 10px 16px;
   border-radius: 8px;
@@ -119,7 +128,7 @@
 }
 
 .jobswiper-toast a {
-  color: #93c5fd;
+  color: var(--js-toast-link);
   text-decoration: underline;
   margin-left: 6px;
 }
@@ -159,7 +168,7 @@
 }
 
 .jobswiper-card-btn.saved {
-  background: #057642 !important;
+  background: var(--js-emerald) !important;
   color: white !important;
 }
 

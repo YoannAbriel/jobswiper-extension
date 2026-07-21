@@ -96,7 +96,7 @@ function fillField(input, value) {
   input.dispatchEvent(new Event('blur', { bubbles: true }))
 
   // Visual feedback
-  input.style.outline = '2px solid #1e3a5f'
+  input.style.outline = '2px solid #0064be'
   input.style.outlineOffset = '1px'
   setTimeout(() => {
     input.style.outline = ''

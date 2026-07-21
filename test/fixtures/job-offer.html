@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<!-- Static fixture that mimics a job-board detail page, used only to screenshot
+     the injected JobSwiper overlay/button UI in isolation (no real Indeed/LinkedIn,
+     which are gated and flaky). NOT shipped in the extension. -->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Senior Product Designer at Northwind Labs</title>
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; color: #202124; background: #fff; }
+    .topbar { height: 56px; border-bottom: 1px solid #e0e0e0; display: flex; align-items: center; padding: 0 24px; font-weight: 700; color: #2557a7; }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 28px 24px; }
+    h1 { font-size: 24px; margin: 0 0 6px; }
+    .meta { color: #5f6368; font-size: 14px; margin-bottom: 20px; }
+    .apply { display: inline-block; background: #2557a7; color: #fff; padding: 10px 22px; border-radius: 8px; font-weight: 700; }
+    #jobDescriptionText { margin-top: 24px; line-height: 1.7; font-size: 15px; color: #3c4043; }
+    #jobDescriptionText h2 { font-size: 16px; margin: 20px 0 8px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">indeed</div>
+  <div class="wrap">
+    <div class="jobsearch-JobInfoHeader-title-container">
+      <h1>Senior Product Designer</h1>
+      <div class="meta">Northwind Labs &middot; Remote (Europe) &middot; Full-time</div>
+      <a class="apply" href="#">Apply now</a>
+    </div>
+    <div id="jobDescriptionText">
+      <p>Northwind Labs is looking for a Senior Product Designer to shape our design system and lead end-to-end work across web and mobile.</p>
+      <h2>Requirements</h2>
+      <p>5+ years in product design, strong Figma skills, experience with design tokens, accessibility, and shipping to production. Salary 70000-90000 per year.</p>
+      <h2>Responsibilities</h2>
+      <p>Own the qualifications flow, collaborate with engineering, run usability sessions.</p>
+    </div>
+  </div>
+</body>
+</html>

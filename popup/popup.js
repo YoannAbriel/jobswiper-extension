@@ -166,14 +166,14 @@ async function loadStats(token) {
     const profileEl = document.getElementById('profile-bar')
     if (profileEl) {
       const pct = data.profile_completeness
-      const color = pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444'
+      const color = pct >= 80 ? 'var(--js-emerald)' : pct >= 50 ? 'var(--js-sunset)' : 'var(--js-danger)'
       profileEl.innerHTML = `
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span style="font-size:11px;font-weight:600;color:#4b5563">Profile</span>
-          <span style="font-size:11px;color:#9ca3af">${pct}%</span>
+          <span style="font-size:11px;font-weight:700;color:#4b5563">Profile</span>
+          <span style="font-size:11px;color:var(--js-faint);font-variant-numeric:tabular-nums">${pct}%</span>
         </div>
-        <div style="height:4px;background:#e5e7eb;border-radius:2px;overflow:hidden">
-          <div style="height:100%;width:${pct}%;background:${color};border-radius:2px"></div>
+        <div style="height:5px;background:var(--js-border);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${color};border-radius:3px"></div>
         </div>
       `
     }

@@ -1,3 +1,20 @@
+/* Brand tokens (scoped to our injected surfaces via --js-* names). Kept in sync
+   with content/jobswiper.css and popup/popup.html. Brand blue = #0064be. */
+:root {
+  --js-blue: #0064be;
+  --js-blue-hover: #00539d;
+  --js-blue-050: #eaf2fb;
+  --js-blue-d: #5aa2e6;
+  --js-ink: #18181b;
+  --js-ink-d: #f4f4f5;
+  --js-muted: #71717a;
+  --js-surface: #ffffff;
+  --js-surface-d: #1c1c1e;
+  --js-border: #e7e7ea;
+  --js-border-d: rgba(255, 255, 255, 0.08);
+  --js-emerald: #059669;
+}
+
 /* JobSwiper overlay panel — subtle, non-intrusive sidebar */
 .jobswiper-panel {
   position: fixed;
@@ -12,13 +29,13 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
   animation: jobswiper-panel-in 0.25s ease;
-  color: #1a1a2e;
+  color: var(--js-ink);
   font-size: 12px;
 }
 
 @media (prefers-color-scheme: dark) {
   .jobswiper-panel {
-    background: #1c1c2e;
+    background: var(--js-surface-d);
     color: #d4d4d8;
     box-shadow: 0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06);
   }
@@ -30,26 +47,31 @@
 }
 
 .jobswiper-panel-header {
-  padding: 10px 14px;
-  background: #1e3a5f;
-  color: white;
+  padding: 11px 14px;
+  background: var(--js-surface);
+  color: var(--js-ink);
+  border-bottom: 1px solid var(--js-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
 .jobswiper-panel-header h3 {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 800;
   margin: 0;
-  letter-spacing: 0.3px;
-  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  text-transform: none;
 }
+
+.jobswiper-panel-header .jw-job { color: var(--js-ink); }
+.jobswiper-panel-header .jw-swiper { color: var(--js-blue); }
+.jobswiper-panel-header .jw-sub { color: var(--js-muted); font-weight: 600; margin-left: 2px; }
 
 .jobswiper-panel-close {
   background: none;
   border: none;
-  color: rgba(255,255,255,0.5);
+  color: var(--js-muted);
   cursor: pointer;
   font-size: 16px;
   padding: 2px 4px;
@@ -57,7 +79,19 @@
   border-radius: 4px;
 }
 
-.jobswiper-panel-close:hover { color: white; background: rgba(255,255,255,0.1); }
+.jobswiper-panel-close:hover { color: var(--js-ink); background: rgba(0,0,0,0.06); }
+
+@media (prefers-color-scheme: dark) {
+  .jobswiper-panel-header {
+    background: var(--js-surface-d);
+    color: var(--js-ink-d);
+    border-bottom-color: var(--js-border-d);
+  }
+  .jobswiper-panel-header .jw-job { color: var(--js-ink-d); }
+  .jobswiper-panel-header .jw-swiper { color: var(--js-blue-d); }
+  .jobswiper-panel-close { color: #a1a1aa; }
+  .jobswiper-panel-close:hover { color: var(--js-ink-d); background: rgba(255,255,255,0.1); }
+}
 
 .jobswiper-panel-body {
   padding: 12px;
@@ -162,6 +196,9 @@
 
 @media (prefers-color-scheme: dark) {
   .jobswiper-summary { background: #27272a; color: #a1a1aa; border-color: #3f3f46; }
+  /* Notes textarea (our own panel): match the dark surface instead of native white */
+  .jobswiper-notes { background: #232326; color: #e4e4e7; border-color: var(--js-border-d) !important; }
+  .jobswiper-notes::placeholder { color: #8a8a92; }
 }
 
 /* Already saved badge */
@@ -194,7 +231,7 @@
   width: 20px;
   height: 20px;
   border: 2px solid #e4e4e7;
-  border-top-color: #1e3a5f;
+  border-top-color: var(--js-blue);
   border-radius: 50%;
   animation: jobswiper-spin 0.6s linear infinite;
   margin: 0 auto 6px;
@@ -370,8 +407,8 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  color: #2563eb;
-  background: #dbeafe;
+  color: var(--js-blue);
+  background: var(--js-blue-050);
   padding: 2px 6px;
   border-radius: 4px;
   margin-top: 1px;
@@ -396,14 +433,14 @@
 .jobswiper-axis-cta {
   display: inline-block;
   padding: 6px 14px;
-  background: #1e3a5f;
+  background: var(--js-blue);
   color: #ffffff !important;
   border-radius: 8px;
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: none;
 }
-.jobswiper-axis-cta:hover { background: #16294a; }
+.jobswiper-axis-cta:hover { background: var(--js-blue-hover); }
 
 .jobswiper-axis-footer {
   padding: 8px 14px;
@@ -413,8 +450,8 @@
 }
 .jobswiper-axis-footer a {
   font-size: 11px;
-  color: #1e3a5f;
-  font-weight: 600;
+  color: var(--js-blue);
+  font-weight: 700;
   text-decoration: none;
 }
 .jobswiper-axis-footer a:hover { text-decoration: underline; }

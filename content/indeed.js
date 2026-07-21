@@ -297,7 +297,7 @@ async function showAnalysisPanel() {
   panel.className = 'jobswiper-panel'
   panel.innerHTML = `
     <div class="jobswiper-panel-header">
-      <h3>JobSwiper Analysis</h3>
+      <h3><span class="jw-job">Job</span><span class="jw-swiper">Swiper</span> <span class="jw-sub">Analysis</span></h3>
       <button class="jobswiper-panel-close">×</button>
     </div>
     <div class="jobswiper-panel-body">
@@ -416,7 +416,7 @@ async function showAnalysisPanel() {
     if (data.profile_skills_count === 0) {
       const tip = document.createElement('div')
       tip.style.cssText = 'font-size:11px;color:#71717a;text-align:center;padding:8px;background:#f4f4f5;border-radius:8px'
-      tip.innerHTML = `💡 Add skills to your <a href="${API_BASE}/dashboard/profile" target="_blank" style="color:#1e3a5f;font-weight:600">profile</a> for better match scores`
+      tip.innerHTML = `💡 Add skills to your <a href="${API_BASE}/dashboard/profile" target="_blank" style="color:#0064be;font-weight:700">profile</a> for better match scores`
       body.appendChild(tip)
     }
 

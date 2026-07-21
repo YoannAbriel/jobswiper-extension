@@ -3,42 +3,80 @@
 <head>
   <meta charset="utf-8">
   <style>
+    /* Nunito (brand body face), bundled locally as woff2 — no external CDN (CSP). */
+    @font-face {
+      font-family: 'Nunito';
+      font-style: normal;
+      font-weight: 400 800;
+      font-display: swap;
+      src: url('../fonts/nunito-latin.woff2') format('woff2');
+      /* Latin subset covers EN/FR/ES accents (U+0000-00FF). Kept lean, no latin-ext. */
+    }
+
+    :root {
+      --js-blue: #0064be;
+      --js-blue-hover: #00539d;
+      --js-blue-050: #eaf2fb;
+      --js-ink: #18181b;
+      --js-muted: #71717a;
+      --js-faint: #9ca3af;
+      --js-bg: #fcfcfd;
+      --js-surface: #ffffff;
+      --js-border: #e7e7ea;
+      --js-emerald: #059669;
+      --js-emerald-bg: #ecfdf5;
+      --js-sunset: #d4823f;
+      --js-sunset-bg: #fbf1e8;
+      --js-danger: #ef4444;
+    }
+
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { width: 320px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a2e; }
-    .header { padding: 14px 16px; background: #1e3a5f; color: white; }
-    .header h1 { font-size: 14px; font-weight: 700; }
-    .header p { font-size: 10px; opacity: 0.6; margin-top: 2px; }
+    body {
+      width: 320px;
+      font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--js-bg);
+      color: var(--js-ink);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Flat header with the two-tone wordmark (no navy band) */
+    .header { padding: 14px 16px 12px; background: var(--js-surface); border-bottom: 1px solid var(--js-border); }
+    .brand { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; line-height: 1; }
+    .brand .job { color: var(--js-ink); }
+    .brand .swiper { color: var(--js-blue); }
+    .header p { font-size: 10.5px; color: var(--js-muted); margin-top: 4px; font-weight: 600; }
+
     .content { padding: 14px 16px; }
 
-    .status { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; margin-bottom: 10px; }
-    .status.ok { background: #ecfdf5; color: #065f46; }
-    .status.warn { background: #fef3c7; color: #92400e; }
-    .status .dot { width: 7px; height: 7px; border-radius: 50%; }
-    .status.ok .dot { background: #10b981; }
-    .status.warn .dot { background: #f59e0b; }
+    .status { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; margin-bottom: 12px; }
+    .status.ok { background: var(--js-emerald-bg); color: #065f46; }
+    .status.warn { background: var(--js-sunset-bg); color: #8a4b18; }
+    .status .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .status.ok .dot { background: var(--js-emerald); }
+    .status.warn .dot { background: var(--js-sunset); }
 
-    .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-    .stat { text-align: center; padding: 10px 4px; background: white; border-radius: 10px; border: 1px solid #e5e7eb; }
-    .stat-num { font-size: 20px; font-weight: 800; color: #1e3a5f; }
-    .stat-label { font-size: 10px; color: #9ca3af; font-weight: 500; margin-top: 2px; }
+    .stats { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; margin-bottom: 12px; }
+    .stat { text-align: center; padding: 10px 4px; background: var(--js-surface); border-radius: 10px; border: 1px solid var(--js-border); }
+    .stat-num { font-size: 20px; font-weight: 800; color: var(--js-ink); font-variant-numeric: tabular-nums; }
+    .stat-label { font-size: 10px; color: var(--js-faint); font-weight: 600; margin-top: 2px; }
 
-    .btn { display: block; width: 100%; padding: 9px; border-radius: 8px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; transition: all 0.15s; margin-bottom: 6px; }
-    .btn-primary { background: #1e3a5f; color: white; }
-    .btn-primary:hover { background: #15304f; }
-    .btn-outline { background: white; color: #1e3a5f; border: 1px solid #d1d5db; }
-    .btn-outline:hover { background: #f3f4f6; }
+    .btn { display: block; width: 100%; padding: 9px; border-radius: 8px; border: none; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer; text-align: center; text-decoration: none; transition: background 0.15s, border-color 0.15s; margin-bottom: 6px; }
+    .btn-primary { background: var(--js-blue); color: #fff; }
+    .btn-primary:hover { background: var(--js-blue-hover); }
+    .btn-outline { background: var(--js-surface); color: var(--js-ink); border: 1px solid var(--js-border); }
+    .btn-outline:hover { background: #f4f4f5; }
 
-    .divider { height: 1px; background: #e5e7eb; margin: 10px 0; }
+    .divider { height: 1px; background: var(--js-border); margin: 12px 0; }
 
-    .recent-item { padding: 6px 0; border-bottom: 1px solid #f3f4f6; }
+    .recent-item { padding: 6px 0; border-bottom: 1px solid #f2f2f4; }
     .recent-item:last-child { border-bottom: none; }
-    .recent-title { font-size: 12px; font-weight: 600; color: #1a1a2e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .recent-company { font-size: 10px; color: #9ca3af; }
+    .recent-title { font-size: 12px; font-weight: 700; color: var(--js-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .recent-company { font-size: 10px; color: var(--js-faint); font-weight: 600; }
 
-    .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #9ca3af; margin-bottom: 6px; }
+    .section-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--js-faint); margin-bottom: 6px; }
 
-    .footer { padding: 10px 16px; text-align: center; font-size: 10px; color: #9ca3af; border-top: 1px solid #e5e7eb; }
-    .footer a { color: #1e3a5f; text-decoration: none; }
+    .footer { padding: 10px 16px; text-align: center; font-size: 10px; color: var(--js-faint); border-top: 1px solid var(--js-border); }
+    .footer a { color: var(--js-blue); text-decoration: none; font-weight: 700; }
 
     #login-section, #main-section { display: none; }
     body.logged-in #main-section { display: block; }
@@ -47,17 +85,17 @@
 </head>
 <body class="logged-out">
   <div class="header">
-    <h1>JobSwiper</h1>
-    <p>AI-powered job prep</p>
+    <div class="brand"><span class="job">Job</span><span class="swiper">Swiper</span></div>
+    <p>AI job prep, right where you apply</p>
   </div>
 
   <!-- Not logged in -->
   <div id="login-section" class="content">
     <div class="status warn"><div class="dot"></div>Not connected</div>
-    <p style="font-size:12px;color:#4b5563;margin-bottom:10px;line-height:1.4">
-      Click below to log in and connect your account.
+    <p style="font-size:12px;color:#4b5563;margin-bottom:12px;line-height:1.5">
+      Log in to connect your account and start saving jobs.
     </p>
-    <a href="https://www.jobswiper.ai/login?from=extension" target="_blank" class="btn btn-primary" style="margin-bottom:4px" id="open-btn">Open JobSwiper & Connect</a>
+    <a href="https://www.jobswiper.ai/login?from=extension" target="_blank" class="btn btn-primary" style="margin-bottom:4px" id="open-btn">Open JobSwiper and connect</a>
     <button id="connect-btn" class="btn btn-outline">Already logged in? Connect</button>
   </div>
 
@@ -69,7 +107,6 @@
     <div id="stats" class="stats">
       <div class="stat"><div class="stat-num">-</div><div class="stat-label">Saved</div></div>
       <div class="stat"><div class="stat-num">-</div><div class="stat-label">Applied</div></div>
-      <div class="stat"><div class="stat-num">-</div><div class="stat-label">Interviews</div></div>
     </div>
 
     <!-- Profile bar -->
@@ -80,24 +117,23 @@
     <!-- Recent saves -->
     <div class="section-title">Recent saves</div>
     <div id="recent-saves" style="margin-bottom:10px">
-      <div style="text-align:center;color:#9ca3af;font-size:11px;padding:8px">Loading...</div>
+      <div style="text-align:center;color:var(--js-faint);font-size:11px;padding:8px">Loading...</div>
     </div>
 
     <div class="divider"></div>
 
-    <a href="https://www.jobswiper.ai/dashboard/jobs" target="_blank" class="btn btn-outline">My Saved Jobs</a>
+    <button id="save-page-btn" class="btn btn-primary">Save this page to JobSwiper</button>
+    <div id="save-page-status" style="font-size:12px;color:var(--js-muted);margin:6px 0 0;"></div>
+
+    <div class="divider"></div>
+
+    <a href="https://www.jobswiper.ai/dashboard/jobs" target="_blank" class="btn btn-outline">My saved jobs</a>
     <a href="https://www.indeed.com" target="_blank" class="btn btn-outline">Browse Indeed</a>
     <a href="https://www.linkedin.com/jobs" target="_blank" class="btn btn-outline">Browse LinkedIn</a>
 
     <div class="divider"></div>
 
-    <button id="save-page-btn" class="btn" style="width:100%;margin:8px 0;background:#0064be;color:#fff;">
-      Save this page to JobSwiper
-    </button>
-    <div id="save-page-status" style="font-size:12px;color:#666;margin-bottom:6px;"></div>
-
-    <div class="divider"></div>
-    <button id="logout-btn" class="btn btn-outline" style="color:#ef4444;border-color:#fecaca;font-size:11px">Disconnect</button>
+    <button id="logout-btn" class="btn btn-outline" style="color:var(--js-danger);border-color:#f5d0d0;font-size:11px">Disconnect</button>
   </div>
 
   <div class="footer"><a href="https://www.jobswiper.ai" target="_blank">jobswiper.ai</a></div>
