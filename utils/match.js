@@ -263,7 +263,7 @@
       if (overflow > 0) {
         const more = document.createElement('span')
         more.className = 'jobswiper-chip more'
-        more.textContent = `+${overflow} more`
+        more.textContent = t('axisChipMore', [String(overflow)])
         chips.appendChild(more)
       }
       row.appendChild(chips)
@@ -325,7 +325,7 @@
     const close = document.createElement('button')
     close.className = 'jobswiper-axis-close'
     close.type = 'button'
-    close.setAttribute('aria-label', 'Close')
+    close.setAttribute('aria-label', t('close'))
     close.textContent = '×'
     close.addEventListener('click', (e) => { e.stopPropagation(); closePopover() })
 

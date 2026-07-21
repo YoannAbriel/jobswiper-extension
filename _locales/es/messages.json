@@ -322,5 +322,57 @@
   },
   "completeProfile": {
     "message": "Completar perfil"
+  },
+  "rateLimitedTryAgain": {
+    "message": "Demasiadas solicitudes. Inténtalo de nuevo en un momento."
+  },
+  "sessionExpiredMessage": {
+    "message": "Tu sesión ha caducado."
+  },
+  "reopenJobswiperLink": {
+    "message": "Volver a abrir JobSwiper"
+  },
+  "andTryAgainSuffix": {
+    "message": " e inténtalo de nuevo."
+  },
+  "couldNotAnalyzeJobStatus": {
+    "message": "No se pudo analizar esta oferta ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "requirementsYouMeetTitle": {
+    "message": "✓ Requisitos que cumples"
+  },
+  "requirementsToAddressTitle": {
+    "message": "⚠ Requisitos por mejorar"
+  },
+  "scoreLoadingEllipsis": {
+    "message": "..."
+  },
+  "panelHeaderBrandJob": {
+    "message": "Job"
+  },
+  "panelHeaderBrandSwiper": {
+    "message": "Swiper"
+  },
+  "close": {
+    "message": "Cerrar"
+  },
+  "authenticationRequiredError": {
+    "message": "Autenticación requerida"
+  },
+  "notAuthenticatedError": {
+    "message": "No autenticado"
+  },
+  "axisChipMore": {
+    "message": "+$count$ más",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   }
 }

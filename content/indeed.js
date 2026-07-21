@@ -278,7 +278,7 @@ async function showAnalysisPanel() {
   panel.className = 'jobswiper-panel'
   panel.innerHTML = `
     <div class="jobswiper-panel-header">
-      <h3><span class="jw-job">Job</span><span class="jw-swiper">Swiper</span> <span class="jw-sub">${t('panelAnalysis')}</span></h3>
+      <h3><span class="jw-job">${t('panelHeaderBrandJob')}</span><span class="jw-swiper">${t('panelHeaderBrandSwiper')}</span> <span class="jw-sub">${t('panelAnalysis')}</span></h3>
       <button class="jobswiper-panel-close">×</button>
     </div>
     <div class="jobswiper-panel-body">
@@ -299,10 +299,10 @@ async function showAnalysisPanel() {
     if (!ok) {
       const errBody = panel.querySelector('.jobswiper-panel-body')
       errBody.innerHTML = status === 429
-        ? `<div style="text-align:center;padding:16px;color:#92400e;font-size:12px">Rate limited. Please try again in a moment.</div>`
+        ? `<div style="text-align:center;padding:16px;color:#92400e;font-size:12px">${t('rateLimitedTryAgain')}</div>`
         : status === 401
-          ? `<div style="text-align:center;padding:16px;color:#991b1b;font-size:12px">Your session expired.<br><a href="${API_BASE}/login" target="_blank" style="color:#1e3a5f;font-weight:600">Re-open JobSwiper</a> and try again.</div>`
-          : `<div style="text-align:center;padding:16px;color:#71717a;font-size:12px">Could not analyze this job (${status}).</div>`
+          ? `<div style="text-align:center;padding:16px;color:#991b1b;font-size:12px">${t('sessionExpiredMessage')}<br><a href="${API_BASE}/login" target="_blank" style="color:#1e3a5f;font-weight:600">${t('reopenJobswiperLink')}</a>${t('andTryAgainSuffix')}</div>`
+          : `<div style="text-align:center;padding:16px;color:#71717a;font-size:12px">${t('couldNotAnalyzeJobStatus', [status])}</div>`
       return
     }
 
@@ -321,7 +321,7 @@ async function showAnalysisPanel() {
       body.innerHTML += `
         <div class="jobswiper-score fallback">
           <div>
-            <div class="jobswiper-score-label">Complete your profile to get a real match score</div>
+            <div class="jobswiper-score-label">${t('fallbackHeadline')}</div>
           </div>
         </div>
       `
@@ -355,7 +355,7 @@ async function showAnalysisPanel() {
     if (data.matched_skills?.length > 0) {
       body.innerHTML += `
         <div class="jobswiper-section">
-          <div class="jobswiper-section-title">✓ Requirements you meet</div>
+          <div class="jobswiper-section-title">${t('requirementsYouMeetTitle')}</div>
           <div class="jobswiper-skills">
             ${data.matched_skills.map(s => `<span class="jobswiper-skill matched">${esc(s)}</span>`).join('')}
           </div>
@@ -367,7 +367,7 @@ async function showAnalysisPanel() {
     if (data.missing_skills?.length > 0) {
       body.innerHTML += `
         <div class="jobswiper-section">
-          <div class="jobswiper-section-title">⚠ Requirements to address</div>
+          <div class="jobswiper-section-title">${t('requirementsToAddressTitle')}</div>
           <div class="jobswiper-skills">
             ${data.missing_skills.map(s => `<span class="jobswiper-skill missing">${esc(s)}</span>`).join('')}
           </div>
@@ -460,7 +460,7 @@ function injectButton() {
   scoreBadge.className = 'jobswiper-inline-score'
   scoreBadge.style.background = '#f4f4f5'
   scoreBadge.style.color = '#71717a'
-  scoreBadge.textContent = '...'
+  scoreBadge.textContent = t('scoreLoadingEllipsis')
 
   if (actionBar) {
     const wrapper = document.createElement('div')
@@ -537,7 +537,7 @@ async function _doInjectBadges() {
 
     const badge = document.createElement('span')
     badge.className = 'jobswiper-badge'
-    badge.textContent = '...'
+    badge.textContent = t('scoreLoadingEllipsis')
     titleEl.appendChild(badge)
     pending.push({ title, company, location, snippet, badge })
   }
@@ -563,7 +563,7 @@ async function _doInjectBadges() {
         if (window.JobSwiperMatch.isScoreFallback(data)) {
           badge.style.background = '#f4f4f5'
           badge.style.color = '#71717a'
-          badge.textContent = 'Set up profile'
+          badge.textContent = t('setUpProfile')
           return
         }
         const tier = window.JobSwiperMatch.getMatchTier(score)

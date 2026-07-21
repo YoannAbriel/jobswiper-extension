@@ -9,6 +9,9 @@
 importScripts('utils/shared.js')
 const { API_BASE, fetchWithTimeout, extVersion } = self.JobSwiperShared
 
+// i18n helper: resolve a message key, falling back to the key itself.
+const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
+
 // Refresh the access token when it has less than this many seconds left.
 // 120s buys enough headroom that a slow saveJob fetch still completes
 // against a still-valid token even after the SW yields between
@@ -195,7 +198,7 @@ const PROFILE_CACHE_TTL_MS = 30 * 60 * 1000
 
 async function getProfile() {
   const token = await getValidToken()
-  if (!token) return { ok: false, error: 'Authentication required' }
+  if (!token) return { ok: false, error: t('authenticationRequiredError') }
 
   const { userProfile, userProfileMeta } = await chrome.storage.local.get(['userProfile', 'userProfileMeta'])
   const fresh = userProfileMeta && (Date.now() - userProfileMeta.ts < PROFILE_CACHE_TTL_MS)
@@ -220,7 +223,7 @@ async function getProfile() {
 
     if (res.status === 401) {
       await chrome.storage.local.remove(['token', 'refresh_token', 'expires_at'])
-      return { ok: false, error: 'Authentication required' }
+      return { ok: false, error: t('authenticationRequiredError') }
     }
     if (!res.ok) {
       // Fall back to a stale cached profile rather than failing the button.
@@ -587,7 +590,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // does not get silently logged out after the 1h Supabase TTL.
           const token = await getValidToken()
           if (!token) {
-            sendResponse({ success: false, error: 'Authentication required' })
+            sendResponse({ success: false, error: t('authenticationRequiredError') })
             return
           }
           const result = await saveJob(message.data, token)
@@ -678,7 +681,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // so the caller sees the real server-side reason.
           const token = await getValidToken()
           if (!token) {
-            sendResponse({ success: false, error: 'Not authenticated' })
+            sendResponse({ success: false, error: t('notAuthenticatedError') })
             return
           }
           const response = await fetchWithTimeout(

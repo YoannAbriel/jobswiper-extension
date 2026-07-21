@@ -25,6 +25,8 @@
 ;(function () {
   'use strict'
 
+  // i18n message helper: resolves a key via chrome.i18n, falling back to the key.
+
   var isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined'
   if (isBrowser) {
     if (window.__jobswiperCvAttachLoaded) return
@@ -111,6 +113,8 @@
       errorBody: 'Open JobSwiper to check you are signed in, then reopen this.',
       tooLarge: 'This CV PDF is over 10 MB and cannot be attached.',
       failed: 'Could not prepare the CV. Please try again.',
+      cvFallback: 'CV',
+      perJobSuffix: ' (for this job)',
     },
     fr: {
       trigger: 'Attacher ton CV',
@@ -134,6 +138,33 @@
       errorBody: 'Ouvre JobSwiper pour verifier que tu es connecte, puis rouvre ceci.',
       tooLarge: 'Ce PDF de CV depasse 10 Mo et ne peut pas etre attache.',
       failed: 'Impossible de preparer le CV. Reessaie.',
+      cvFallback: 'CV',
+      perJobSuffix: ' (pour ce poste)',
+    },
+    es: {
+      trigger: 'Adjunta tu CV',
+      title: 'CV para esta candidatura',
+      subtitle: 'Adjúntalo en el campo de carga, o descárgalo para soltarlo tú mismo.',
+      attach: 'Adjuntar CV',
+      download: 'Descargar',
+      preparing: 'Preparando tu CV...',
+      attached: function (n) { return 'CV adjuntado: ' + n },
+      downloaded: function (n) { return 'CV descargado: ' + n + '. Suéltalo en la zona de carga.' },
+      pickTitle: 'Elige el campo de carga',
+      pickBody: 'Haz clic en el campo de carga del CV resaltado en la página.',
+      cancel: 'Cancelar',
+      close: 'Cerrar',
+      noCvsTitle: 'Aún no hay CV',
+      noCvsBody: 'Genera un CV en JobSwiper y luego adjúntalo desde aquí.',
+      openCta: 'Abrir JobSwiper',
+      signInTitle: 'Inicia sesión en JobSwiper',
+      signInBody: 'Inicia sesión en JobSwiper para adjuntar tu CV a esta candidatura.',
+      errorTitle: 'No se pudieron cargar tus CV',
+      errorBody: 'Abre JobSwiper para comprobar que has iniciado sesión y vuelve a abrir esto.',
+      tooLarge: 'Este PDF de CV supera los 10 MB y no se puede adjuntar.',
+      failed: 'No se pudo preparar el CV. Inténtalo de nuevo.',
+      cvFallback: 'CV',
+      perJobSuffix: ' (para este puesto)',
     },
   }
 
@@ -141,7 +172,7 @@
     var raw = locale
     if (!raw && isBrowser) raw = document.documentElement.lang || navigator.language
     raw = (raw || 'en').toLowerCase()
-    return raw.indexOf('fr') === 0 ? 'fr' : 'en'
+    return raw.indexOf('fr') === 0 ? 'fr' : raw.indexOf('es') === 0 ? 'es' : 'en'
   }
 
   function t(lang) { return I18N[lang] || I18N.en }
@@ -437,8 +468,8 @@
         for (var i = 0; i < cvs.length; i++) {
           var opt = document.createElement('option')
           opt.value = cvs[i].id
-          var label = cvs[i].title || 'CV'
-          if (cvs[i].isPerJob) label += lang === 'fr' ? ' (pour ce poste)' : ' (for this job)'
+          var label = cvs[i].title || t(lang).cvFallback
+          if (cvs[i].isPerJob) label += t(lang).perJobSuffix
           opt.textContent = label
           if (cvs[i].id === currentCvId) opt.selected = true
           select.appendChild(opt)

@@ -71,13 +71,33 @@
         linkedin_url: 'LinkedIn', website: 'Site web',
       },
     },
+    es: {
+      button: 'Autocompletar con JobSwiper',
+      reviewTitle: 'Revisa antes de autocompletar',
+      reviewSubtitle: 'JobSwiper solo rellena los campos que confirmes.',
+      confirm: function (n) { return 'Rellenar ' + n + (n === 1 ? ' campo' : ' campos') },
+      cancel: 'Cancelar',
+      filledToast: function (n) { return n + (n === 1 ? ' campo rellenado' : ' campos rellenados') },
+      nothingToast: 'No hay campos para rellenar aquí',
+      completeTitle: 'Completa tu perfil',
+      completeBody: 'Añade tus datos en JobSwiper para autocompletar tus candidaturas.',
+      completeCta: 'Completar mi perfil',
+      signInTitle: 'Inicia sesión en JobSwiper',
+      signInBody: 'Inicia sesión en JobSwiper para autocompletar esta candidatura.',
+      signInCta: 'Abrir JobSwiper',
+      fields: {
+        first_name: 'Nombre', last_name: 'Apellido', full_name: 'Nombre completo',
+        email: 'Correo', phone: 'Teléfono', city: 'Ciudad',
+        linkedin_url: 'LinkedIn', website: 'Sitio web',
+      },
+    },
   }
 
   function pickLang(locale) {
     var raw = locale
     if (!raw && isBrowser) raw = document.documentElement.lang || navigator.language
     raw = (raw || 'en').toLowerCase()
-    return raw.indexOf('fr') === 0 ? 'fr' : 'en'
+    return raw.indexOf('fr') === 0 ? 'fr' : raw.indexOf('es') === 0 ? 'es' : 'en'
   }
 
   function t(lang) { return I18N[lang] || I18N.en }

@@ -322,5 +322,57 @@
   },
   "completeProfile": {
     "message": "Complete profile"
+  },
+  "rateLimitedTryAgain": {
+    "message": "Rate limited. Please try again in a moment."
+  },
+  "sessionExpiredMessage": {
+    "message": "Your session expired."
+  },
+  "reopenJobswiperLink": {
+    "message": "Re-open JobSwiper"
+  },
+  "andTryAgainSuffix": {
+    "message": " and try again."
+  },
+  "couldNotAnalyzeJobStatus": {
+    "message": "Could not analyze this job ($status$).",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "requirementsYouMeetTitle": {
+    "message": "✓ Requirements you meet"
+  },
+  "requirementsToAddressTitle": {
+    "message": "⚠ Requirements to address"
+  },
+  "scoreLoadingEllipsis": {
+    "message": "..."
+  },
+  "panelHeaderBrandJob": {
+    "message": "Job"
+  },
+  "panelHeaderBrandSwiper": {
+    "message": "Swiper"
+  },
+  "close": {
+    "message": "Close"
+  },
+  "authenticationRequiredError": {
+    "message": "Authentication required"
+  },
+  "notAuthenticatedError": {
+    "message": "Not authenticated"
+  },
+  "axisChipMore": {
+    "message": "+$count$ more",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   }
 }
