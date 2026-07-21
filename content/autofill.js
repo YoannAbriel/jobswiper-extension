@@ -161,8 +161,8 @@
     {
       key: 'city',
       autocomplete: ['address-level2'],
-      names: ['city', 'town', 'ville'],
-      labels: ['city', 'town', 'ville', 'stadt', 'ciudad', 'localite'],
+      names: ['city', 'town', 'ville', 'location', 'current location'],
+      labels: ['city', 'town', 'ville', 'stadt', 'ciudad', 'localite', 'location', 'current location', 'localisation', 'ubicacion'],
     },
     {
       key: 'linkedin_url',
@@ -175,6 +175,24 @@
       autocomplete: [],
       names: ['website', 'portfolio', 'personal website', 'personal site'],
       labels: ['website', 'portfolio', 'personal website', 'personal site', 'site web', 'site internet', 'sitio web', 'webseite'],
+    },
+    {
+      key: 'current_company',
+      autocomplete: ['organization'],
+      names: ['company', 'current company', 'employer', 'current employer', 'org', 'organization'],
+      labels: ['company', 'current company', 'employer', 'current employer', 'organization', 'entreprise', 'societe', 'empresa'],
+    },
+    {
+      key: 'headline',
+      autocomplete: ['organization-title'],
+      names: ['headline', 'current title', 'current role', 'current position'],
+      labels: ['headline', 'current title', 'current role', 'current position', 'titre actuel', 'poste actuel', 'puesto actual'],
+    },
+    {
+      key: 'github',
+      autocomplete: [],
+      names: ['github', 'github url', 'github profile'],
+      labels: ['github', 'github url', 'github profile', 'profil github'],
     },
   ]
 
