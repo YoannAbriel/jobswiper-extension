@@ -9,6 +9,17 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
+// i18n: chrome.i18n.getMessage, falls back to the key so nothing renders blank.
+const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
+
+// Localize every element carrying a data-i18n key (runs before auth resolves).
+function localizeStatic() {
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const msg = t(el.dataset.i18n)
+    if (msg) el.textContent = msg
+  })
+}
+
 function esc(str) {
   const d = document.createElement('div')
   d.textContent = str
@@ -41,6 +52,7 @@ async function callSW(message, { timeoutMs = 3000, retries = 1 } = {}) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  localizeStatic()
   // First: try auto-connect (scan open tabs for JobSwiper)
   try {
     const result = await callSW({ type: 'AUTO_CONNECT' })
@@ -82,7 +94,7 @@ function showLoggedOut() {
 document.getElementById('connect-btn')?.addEventListener('click', async () => {
   const btn = document.getElementById('connect-btn')
   const origText = btn.textContent
-  btn.textContent = 'Connecting...'
+  btn.textContent = t('connecting')
   btn.disabled = true
 
   // Try 1: auto-connect via open tab (reads localStorage from a same-origin tab)
@@ -126,7 +138,7 @@ document.getElementById('connect-btn')?.addEventListener('click', async () => {
 
   // Both paths failed: open the dashboard so the user can log in,
   // then they reopen the popup and click Connect again.
-  btn.textContent = 'Opening JobSwiper...'
+  btn.textContent = t('openingJobswiper')
   chrome.tabs.create({ url: `${API_BASE}/dashboard` })
   setTimeout(() => { btn.textContent = origText; btn.disabled = false }, 1500)
 })
@@ -159,8 +171,8 @@ async function loadStats(token) {
     const data = await res.json()
 
     statsEl.innerHTML = `
-      <div class="stat"><div class="stat-num">${data.saved}</div><div class="stat-label">Saved</div></div>
-      <div class="stat"><div class="stat-num">${data.applied}</div><div class="stat-label">Applied</div></div>
+      <div class="stat"><div class="stat-num">${data.saved}</div><div class="stat-label">${esc(t('statSaved'))}</div></div>
+      <div class="stat"><div class="stat-num">${data.applied}</div><div class="stat-label">${esc(t('statApplied'))}</div></div>
     `
 
     const profileEl = document.getElementById('profile-bar')
@@ -169,7 +181,7 @@ async function loadStats(token) {
       const color = pct >= 80 ? 'var(--js-emerald)' : pct >= 50 ? 'var(--js-sunset)' : 'var(--js-danger)'
       profileEl.innerHTML = `
         <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span style="font-size:11px;font-weight:700;color:#4b5563">Profile</span>
+          <span style="font-size:11px;font-weight:700;color:#4b5563">${esc(t('profile'))}</span>
           <span style="font-size:11px;color:var(--js-faint);font-variant-numeric:tabular-nums">${pct}%</span>
         </div>
         <div style="height:5px;background:var(--js-border);border-radius:3px;overflow:hidden">
@@ -186,10 +198,10 @@ async function loadStats(token) {
         </div>
       `).join('')
     } else if (recentEl) {
-      recentEl.innerHTML = '<div style="text-align:center;color:#9ca3af;font-size:11px;padding:8px">No saved jobs yet</div>'
+      recentEl.innerHTML = `<div style="text-align:center;color:#9ca3af;font-size:11px;padding:8px">${esc(t('noSavedJobs'))}</div>`
     }
   } catch {
-    statsEl.innerHTML = '<div style="text-align:center;color:#9ca3af;font-size:11px">Could not load stats</div>'
+    statsEl.innerHTML = `<div style="text-align:center;color:#9ca3af;font-size:11px">${esc(t('couldNotLoadStats'))}</div>`
   }
 }
 
@@ -219,9 +231,9 @@ function plausibilityScore(text) {
 
 async function collectActiveTabText() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-  if (!tab?.id || !tab.url?.startsWith('http')) return { error: 'This page cannot be captured' }
+  if (!tab?.id || !tab.url?.startsWith('http')) return { error: t('pageCannotBeCaptured') }
   if (EXCLUDED_LINKEDIN.test(tab.url)) {
-    return { error: 'Not available on LinkedIn feed, messages or notifications. Open the job page itself.' }
+    return { error: t('notOnLinkedInFeed') }
   }
   const frames = await chrome.scripting.executeScript({
     target: { tabId: tab.id, allFrames: true },
@@ -239,36 +251,36 @@ document.getElementById('save-page-btn')?.addEventListener('click', async () => 
   if (error) { status.textContent = error; return }
 
   const score = plausibilityScore(text)
-  if (score < 2) { status.textContent = 'This page does not look like a job posting.'; return }
-  if (score < 4 && !confirm('This page does not clearly look like a job posting. Send it anyway?')) return
+  if (score < 2) { status.textContent = t('notAJobPosting'); return }
+  if (score < 4 && !confirm(t('notClearlyJobConfirm'))) return
 
   const { pageCapNoticeShown } = await chrome.storage.local.get('pageCapNoticeShown')
   if (!pageCapNoticeShown) {
-    status.textContent = 'Page content is sent to JobSwiper AI to extract the job.'
+    status.textContent = t('pageSentNotice')
     await chrome.storage.local.set({ pageCapNoticeShown: true })
   }
 
   btn.disabled = true
-  btn.textContent = 'Extracting...'
+  btn.textContent = t('extracting')
   try {
     const stripped = window.JobSwiperExtract.stripPII(text).slice(0, 15000)
     // 25s client timeout gives room over PARSE_JOB_PAGE's 20s server-side call.
     const parsed = await callSW({ type: 'PARSE_JOB_PAGE', pageText: stripped, url: tab.url }, { timeoutMs: 25000 })
-    if (!parsed?.success || !parsed.job) throw new Error(parsed?.error || 'Could not extract a job from this page')
+    if (!parsed?.success || !parsed.job) throw new Error(parsed?.error || t('couldNotExtractJob'))
     // SAVE_JOB resolves its own token via getValidToken in the service worker,
     // so no token is passed from here (message.token is not read by the handler).
     const saved = await callSW({
       type: 'SAVE_JOB',
       data: { ...parsed.job, source: 'page-capture', extraction_method: 'ai', url: parsed.job.url || tab.url },
     })
-    if (!saved?.success) throw new Error(saved?.error || 'Save failed')
-    btn.textContent = 'Saved!'
-    status.textContent = `${parsed.job.title} at ${parsed.job.company}`
+    if (!saved?.success) throw new Error(saved?.error || t('saveFailed'))
+    btn.textContent = t('savedExclaimPlain')
+    status.textContent = t('jobAtCompany', [parsed.job.title, parsed.job.company])
   } catch (e) {
-    btn.textContent = 'Save this page to JobSwiper'
+    btn.textContent = t('savePageCta')
     status.textContent = e.message
   } finally {
     btn.disabled = false
-    setTimeout(() => { btn.textContent = 'Save this page to JobSwiper' }, 3000)
+    setTimeout(() => { btn.textContent = t('savePageCta') }, 3000)
   }
 })

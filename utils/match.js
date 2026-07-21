@@ -13,11 +13,14 @@
 
   const API_BASE = 'https://www.jobswiper.ai'
 
+  // i18n helper: chrome.i18n.getMessage, falls back to the key so nothing renders blank.
+  const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
+
   const TIERS = {
     strong: {
       tier: 'strong',
       cutoff: 75,
-      label: 'Excellent Match',
+      label: t('tierExcellent'),
       bg: '#d1fae5', // emerald-100
       fg: '#065f46', // emerald-800
       ring: '#10b981', // emerald-500
@@ -26,7 +29,7 @@
     moderate: {
       tier: 'moderate',
       cutoff: 50,
-      label: 'Good Match',
+      label: t('tierGood'),
       bg: '#fef3c7', // amber-100
       fg: '#92400e', // amber-800
       ring: '#f59e0b', // amber-500
@@ -35,7 +38,7 @@
     low: {
       tier: 'low',
       cutoff: 30,
-      label: 'Stretch Match',
+      label: t('tierStretch'),
       bg: '#ffedd5', // orange-100
       fg: '#9a3412', // orange-800
       ring: '#f97316', // orange-500
@@ -44,7 +47,7 @@
     careerPivot: {
       tier: 'career-pivot',
       cutoff: 0,
-      label: 'Career Pivot',
+      label: t('tierCareerPivot'),
       bg: '#ffe4e6', // rose-100
       fg: '#9f1239', // rose-800
       ring: '#f43f5e', // rose-500
@@ -74,7 +77,7 @@
     badge.style.cursor = 'pointer'
     badge.dataset.jswScore = String(score)
     badge.dataset.jswTier = tier.tier
-    badge.setAttribute('title', `${score}% — ${tier.label}. Click for details.`)
+    badge.setAttribute('title', t('scoreTierTooltip', [String(score), tier.label]))
 
     const num = document.createElement('strong')
     num.textContent = `${score}%`
@@ -86,7 +89,7 @@
 
     const why = document.createElement('span')
     why.className = 'jobswiper-why-link'
-    why.textContent = 'Why?'
+    why.textContent = t('why')
     why.style.cssText = `font-weight:600;text-decoration:underline;opacity:0.85;`
 
     const sep = () => {
@@ -109,12 +112,12 @@
 
   const AXIS_ORDER = ['skills', 'experience', 'jobType', 'location', 'industry', 'companySize']
   const AXIS_LABEL = {
-    skills: 'Skills',
-    experience: 'Experience',
-    jobType: 'Contract type',
-    location: 'Location',
-    industry: 'Industry',
-    companySize: 'Company size',
+    skills: t('axisSkills'),
+    experience: t('axisExperience'),
+    jobType: t('axisContractType'),
+    location: t('axisLocation'),
+    industry: t('axisIndustry'),
+    companySize: t('axisCompanySize'),
   }
 
   function escHtml(str) {
@@ -212,7 +215,7 @@
       tipBox.className = 'jobswiper-axis-tip'
       const tipLabel = document.createElement('span')
       tipLabel.className = 'jobswiper-axis-tip-label'
-      tipLabel.textContent = 'Tip'
+      tipLabel.textContent = t('tip')
       const tipText = document.createElement('span')
       tipText.textContent = axisData.tip
       tipBox.appendChild(tipLabel)
@@ -241,7 +244,7 @@
     dot.style.background = tier.dot
 
     const titleText = document.createElement('div')
-    titleText.innerHTML = `<div class="jobswiper-axis-title-main">Why this score?</div>
+    titleText.innerHTML = `<div class="jobswiper-axis-title-main">${escHtml(t('whyThisScore'))}</div>
       <div class="jobswiper-axis-title-sub"><strong>${score}</strong> / 100 · <span style="color:${tier.fg}">${escHtml(tier.label)}</span></div>`
 
     title.appendChild(dot)
@@ -268,19 +271,19 @@
       const headline = document.createElement('div')
       headline.className = 'jobswiper-axis-empty-title'
       headline.textContent = data && data.already_saved
-        ? 'Generating your personalised explanation'
-        : 'Save the job to see why'
+        ? t('emptyGeneratingTitle')
+        : t('emptySaveTitle')
       const sub = document.createElement('p')
       sub.className = 'jobswiper-axis-empty-sub'
       sub.textContent = data && data.already_saved
-        ? 'Open the job in your dashboard to trigger the AI explanation. We cache it the first time you view the detail page.'
-        : 'Once saved, the AI breaks the score down into 6 axes (skills, experience, contract, location, industry, company size) with tips you can act on.'
+        ? t('emptyGeneratingSub')
+        : t('emptySaveSub')
       const cta = document.createElement('a')
       cta.className = 'jobswiper-axis-cta'
       cta.href = `${API_BASE}/dashboard/jobs`
       cta.target = '_blank'
       cta.rel = 'noopener'
-      cta.textContent = data && data.already_saved ? 'Open dashboard' : 'Open JobSwiper'
+      cta.textContent = data && data.already_saved ? t('openDashboard') : t('openJobswiper')
       empty.appendChild(headline)
       empty.appendChild(sub)
       empty.appendChild(cta)
@@ -301,7 +304,7 @@
     link.href = `${API_BASE}/dashboard/jobs`
     link.target = '_blank'
     link.rel = 'noopener'
-    link.textContent = 'Open in dashboard →'
+    link.textContent = t('openInDashboard')
     footer.appendChild(link)
     root.appendChild(footer)
 

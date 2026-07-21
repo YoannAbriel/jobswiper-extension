@@ -9,8 +9,8 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
-
-
+// i18n helper: chrome.i18n.getMessage, falls back to the key so nothing renders blank.
+const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
 
 function esc(str) {
   const d = document.createElement('div')
@@ -125,7 +125,7 @@ const _beamHTML = '<div class="jobswiper-beam"><div></div></div>'
 function createSaveButton() {
   const btn = document.createElement('button')
   btn.className = 'jobswiper-save-btn'
-  btn.innerHTML = `${_beamHTML}${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}Save to JobSwiper`
+  btn.innerHTML = `${_beamHTML}${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}${t('saveToJobswiper')}`
   return btn
 }
 
@@ -138,7 +138,7 @@ function showToast(msg, link) {
     const a = document.createElement('a')
     a.href = link
     a.target = '_blank'
-    a.textContent = 'Open in JobSwiper'
+    a.textContent = t('openInJobswiper')
     toast.appendChild(a)
   }
   document.body.appendChild(toast)
@@ -186,16 +186,16 @@ function aiExtractFallback(sourceName) {
 }
 
 async function handleSave(btn, retryCount = 0) {
-  btn.innerHTML = '<div class="spinner"></div> Saving...'
+  btn.innerHTML = `<div class="spinner"></div> ${t('saving')}`
   btn.disabled = true
 
   const jobData = extractJobData()
   let effectiveJob = jobData
   if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
-    btn.innerHTML = '<div class="spinner"></div> Smart extraction...'
+    btn.innerHTML = `<div class="spinner"></div> ${t('smartExtraction')}`
     effectiveJob = await aiExtractFallback('indeed')
     if (!effectiveJob) {
-      btn.innerHTML = '⚠️ Could not extract, open the job page and retry'
+      btn.innerHTML = t('couldNotExtractRetry')
       setTimeout(() => resetButton(btn), 3000)
       return
     }
@@ -216,8 +216,8 @@ async function handleSave(btn, retryCount = 0) {
     }
 
     if (!token) {
-      btn.textContent = '🔒 Log in first'
-      showToast('Please log in to JobSwiper first', API_BASE + '/login')
+      btn.textContent = t('loginFirst')
+      showToast(t('loginToJobswiperFirst'), API_BASE + '/login')
       setTimeout(() => resetButton(btn), 2000)
       return
     }
@@ -227,9 +227,9 @@ async function handleSave(btn, retryCount = 0) {
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
-      btn.innerHTML = `${_beamHTML}✓ Saved!`
+      btn.innerHTML = `${_beamHTML}${t('savedCheckExclaim')}`
       const jobDetailUrl = response.likedJobId ? `${API_BASE}/dashboard/jobs/${response.likedJobId}` : `${API_BASE}/dashboard/jobs`
-      showToast('Job saved to JobSwiper!', jobDetailUrl)
+      showToast(t('jobSaved'), jobDetailUrl)
       return
     }
 
@@ -244,7 +244,7 @@ async function handleSave(btn, retryCount = 0) {
           return handleSave(btn, retryCount + 1)
         }
       } catch {}
-      btn.textContent = '🔒 Reconnect in popup'
+      btn.textContent = t('reconnectInPopup')
       setTimeout(() => resetButton(btn), 3000)
       return
     }
@@ -256,7 +256,7 @@ async function handleSave(btn, retryCount = 0) {
       return handleSave(btn, retryCount + 1)
     }
 
-    btn.textContent = '❌ ' + (response?.error || 'Save failed')
+    btn.textContent = '❌ ' + (response?.error || t('saveFailed'))
     setTimeout(() => resetButton(btn), 2000)
   } catch (err) {
     // Network error — retry once
@@ -266,8 +266,8 @@ async function handleSave(btn, retryCount = 0) {
       return handleSave(btn, retryCount + 1)
     }
     console.error('[JobSwiper] Save error:', err)
-    btn.textContent = '❌ ' + (err.message || 'Connection error')
-    showToast('Error: ' + (err.message || 'Could not connect to JobSwiper'))
+    btn.textContent = '❌ ' + (err.message || t('couldNotConnect'))
+    showToast(t('toastErrorPrefix', [err.message || t('couldNotConnect')]))
     setTimeout(() => resetButton(btn), 3000)
   }
 }
@@ -275,7 +275,7 @@ async function handleSave(btn, retryCount = 0) {
 function resetButton(btn) {
   btn.className = 'jobswiper-save-btn'
   btn.disabled = false
-  btn.innerHTML = `${_beamHTML}${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}Save to JobSwiper`
+  btn.innerHTML = `${_beamHTML}${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="14" height="14"></span> ` : ''}${t('saveToJobswiper')}`
 }
 
 // ============================================================================
@@ -297,13 +297,13 @@ async function showAnalysisPanel() {
   panel.className = 'jobswiper-panel'
   panel.innerHTML = `
     <div class="jobswiper-panel-header">
-      <h3><span class="jw-job">Job</span><span class="jw-swiper">Swiper</span> <span class="jw-sub">Analysis</span></h3>
+      <h3><span class="jw-job">Job</span><span class="jw-swiper">Swiper</span> <span class="jw-sub">${t('panelAnalysis')}</span></h3>
       <button class="jobswiper-panel-close">×</button>
     </div>
     <div class="jobswiper-panel-body">
       <div class="jobswiper-loading">
         <div class="spinner"></div>
-        Analyzing job...
+        ${t('analyzingJob')}
       </div>
     </div>
   `
@@ -328,7 +328,7 @@ async function showAnalysisPanel() {
 
     // Already saved badge
     if (data.already_saved) {
-      body.innerHTML += `<div class="jobswiper-already-saved">✓ Already saved to your pipeline</div>`
+      body.innerHTML += `<div class="jobswiper-already-saved">${t('alreadySavedPipeline')}</div>`
     }
 
     // Match score (panel uses tier-class for legacy CSS hooks)
@@ -343,7 +343,7 @@ async function showAnalysisPanel() {
         </div>
         <div>
           <div class="jobswiper-score-label">${tier.label}</div>
-          <div style="font-size:11px;color:#71717a;margin-top:2px">${data.matched_skills?.length || 0}/${data.keywords?.length || 0} skills matched</div>
+          <div style="font-size:11px;color:#71717a;margin-top:2px">${t('skillsMatched', [String(data.matched_skills?.length || 0), String(data.keywords?.length || 0)])}</div>
         </div>
       </div>
     `
@@ -352,7 +352,7 @@ async function showAnalysisPanel() {
     if (data.matched_skills?.length > 0) {
       body.innerHTML += `
         <div class="jobswiper-section">
-          <div class="jobswiper-section-title">✓ Your matching skills</div>
+          <div class="jobswiper-section-title">${t('yourMatchingSkills')}</div>
           <div class="jobswiper-skills">
             ${data.matched_skills.map(s => `<span class="jobswiper-skill matched">${esc(s)}</span>`).join('')}
           </div>
@@ -364,7 +364,7 @@ async function showAnalysisPanel() {
     if (data.missing_skills?.length > 0) {
       body.innerHTML += `
         <div class="jobswiper-section">
-          <div class="jobswiper-section-title">⚠ Skills to highlight</div>
+          <div class="jobswiper-section-title">${t('skillsToHighlight')}</div>
           <div class="jobswiper-skills">
             ${data.missing_skills.map(s => `<span class="jobswiper-skill missing">${esc(s)}</span>`).join('')}
           </div>
@@ -380,11 +380,11 @@ async function showAnalysisPanel() {
     // Notes + rating section
     body.innerHTML += `
       <div class="jobswiper-section">
-        <div class="jobswiper-section-title">Your notes</div>
+        <div class="jobswiper-section-title">${t('yourNotes')}</div>
         <div style="display:flex;gap:2px;margin-bottom:6px" class="jobswiper-stars">
           ${[1,2,3,4,5].map(n => `<button data-star="${n}" style="background:none;border:none;cursor:pointer;font-size:18px;padding:0;color:#d1d5db">☆</button>`).join('')}
         </div>
-        <textarea class="jobswiper-notes" placeholder="Add a note about this job..." style="width:100%;min-height:48px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:inherit;resize:vertical;outline:none;"></textarea>
+        <textarea class="jobswiper-notes" placeholder="${t('addNotePlaceholder')}" style="width:100%;min-height:48px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:12px;font-family:inherit;resize:vertical;outline:none;"></textarea>
       </div>
     `
 
@@ -416,7 +416,7 @@ async function showAnalysisPanel() {
     if (data.profile_skills_count === 0) {
       const tip = document.createElement('div')
       tip.style.cssText = 'font-size:11px;color:#71717a;text-align:center;padding:8px;background:#f4f4f5;border-radius:8px'
-      tip.innerHTML = `💡 Add skills to your <a href="${API_BASE}/dashboard/profile" target="_blank" style="color:#0064be;font-weight:700">profile</a> for better match scores`
+      tip.innerHTML = `${t('profileTipPrefix')}<a href="${API_BASE}/dashboard/profile" target="_blank" style="color:#0064be;font-weight:700">${t('profileTipLink')}</a>${t('profileTipSuffix')}`
       body.appendChild(tip)
     }
 
@@ -424,7 +424,7 @@ async function showAnalysisPanel() {
     console.error('[JobSwiper] Analysis error:', err)
     panel.querySelector('.jobswiper-panel-body').innerHTML = `
       <div style="text-align:center;padding:16px;color:#71717a;font-size:12px">
-        Could not analyze this job.<br>
+        ${t('couldNotAnalyze')}<br>
         <span style="font-size:11px">${err.message}</span>
       </div>
     `
@@ -489,7 +489,7 @@ function injectButton() {
 
       if (data.already_saved) {
         btn.className = 'jobswiper-save-btn saved'
-        btn.innerHTML = `${_beamHTML}✓ Saved`
+        btn.innerHTML = `${_beamHTML}${t('savedCheck')}`
       }
     }).catch(() => scoreBadge.remove())
   })

@@ -196,8 +196,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     chrome.notifications.create('jobswiper-installed', {
       type: 'basic',
       iconUrl: 'icons/icon128.png',
-      title: 'JobSwiper installed',
-      message: "Open any job on LinkedIn, Indeed, or JobUp and it'll save automatically.",
+      title: chrome.i18n.getMessage('installedTitle'),
+      message: chrome.i18n.getMessage('installedBody'),
       priority: 1,
     })
   } catch {}
@@ -376,8 +376,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   chrome.notifications.create(alarm.name, {
     type: 'basic',
     iconUrl: 'icons/icon128.png',
-    title: 'JobSwiper Reminder',
-    message: `You saved "${reminder.title}" at ${reminder.company} 3 days ago. Ready to apply?`,
+    title: chrome.i18n.getMessage('reminderTitle'),
+    message: chrome.i18n.getMessage('reminderBody', [reminder.title, reminder.company]),
     priority: 1,
   })
   await chrome.storage.local.set({ reminders: reminders.filter(r => r.alarm !== alarm.name) })

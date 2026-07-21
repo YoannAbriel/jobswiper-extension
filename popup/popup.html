@@ -86,27 +86,27 @@
 <body class="logged-out">
   <div class="header">
     <div class="brand"><span class="job">Job</span><span class="swiper">Swiper</span></div>
-    <p>AI job prep, right where you apply</p>
+    <p data-i18n="tagline">AI job prep, right where you apply</p>
   </div>
 
   <!-- Not logged in -->
   <div id="login-section" class="content">
-    <div class="status warn"><div class="dot"></div>Not connected</div>
-    <p style="font-size:12px;color:#4b5563;margin-bottom:12px;line-height:1.5">
+    <div class="status warn"><div class="dot"></div><span data-i18n="statusNotConnected">Not connected</span></div>
+    <p style="font-size:12px;color:#4b5563;margin-bottom:12px;line-height:1.5" data-i18n="loginPrompt">
       Log in to connect your account and start saving jobs.
     </p>
-    <a href="https://www.jobswiper.ai/login?from=extension" target="_blank" class="btn btn-primary" style="margin-bottom:4px" id="open-btn">Open JobSwiper and connect</a>
-    <button id="connect-btn" class="btn btn-outline">Already logged in? Connect</button>
+    <a href="https://www.jobswiper.ai/login?from=extension" target="_blank" class="btn btn-primary" style="margin-bottom:4px" id="open-btn" data-i18n="openAndConnect">Open JobSwiper and connect</a>
+    <button id="connect-btn" class="btn btn-outline" data-i18n="alreadyLoggedIn">Already logged in? Connect</button>
   </div>
 
   <!-- Logged in -->
   <div id="main-section" class="content">
-    <div class="status ok"><div class="dot"></div>Connected</div>
+    <div class="status ok"><div class="dot"></div><span data-i18n="statusConnected">Connected</span></div>
 
     <!-- Stats -->
     <div id="stats" class="stats">
-      <div class="stat"><div class="stat-num">-</div><div class="stat-label">Saved</div></div>
-      <div class="stat"><div class="stat-num">-</div><div class="stat-label">Applied</div></div>
+      <div class="stat"><div class="stat-num">-</div><div class="stat-label" data-i18n="statSaved">Saved</div></div>
+      <div class="stat"><div class="stat-num">-</div><div class="stat-label" data-i18n="statApplied">Applied</div></div>
     </div>
 
     <!-- Profile bar -->
@@ -115,25 +115,25 @@
     <div class="divider"></div>
 
     <!-- Recent saves -->
-    <div class="section-title">Recent saves</div>
+    <div class="section-title" data-i18n="recentSaves">Recent saves</div>
     <div id="recent-saves" style="margin-bottom:10px">
-      <div style="text-align:center;color:var(--js-faint);font-size:11px;padding:8px">Loading...</div>
+      <div style="text-align:center;color:var(--js-faint);font-size:11px;padding:8px" data-i18n="loading">Loading...</div>
     </div>
 
     <div class="divider"></div>
 
-    <button id="save-page-btn" class="btn btn-primary">Save this page to JobSwiper</button>
+    <button id="save-page-btn" class="btn btn-primary" data-i18n="savePageCta">Save this page to JobSwiper</button>
     <div id="save-page-status" style="font-size:12px;color:var(--js-muted);margin:6px 0 0;"></div>
 
     <div class="divider"></div>
 
-    <a href="https://www.jobswiper.ai/dashboard/jobs" target="_blank" class="btn btn-outline">My saved jobs</a>
-    <a href="https://www.indeed.com" target="_blank" class="btn btn-outline">Browse Indeed</a>
-    <a href="https://www.linkedin.com/jobs" target="_blank" class="btn btn-outline">Browse LinkedIn</a>
+    <a href="https://www.jobswiper.ai/dashboard/jobs" target="_blank" class="btn btn-outline" data-i18n="mySavedJobs">My saved jobs</a>
+    <a href="https://www.indeed.com" target="_blank" class="btn btn-outline" data-i18n="browseIndeed">Browse Indeed</a>
+    <a href="https://www.linkedin.com/jobs" target="_blank" class="btn btn-outline" data-i18n="browseLinkedIn">Browse LinkedIn</a>
 
     <div class="divider"></div>
 
-    <button id="logout-btn" class="btn btn-outline" style="color:var(--js-danger);border-color:#f5d0d0;font-size:11px">Disconnect</button>
+    <button id="logout-btn" class="btn btn-outline" style="color:var(--js-danger);border-color:#f5d0d0;font-size:11px" data-i18n="disconnect">Disconnect</button>
   </div>
 
   <div class="footer"><a href="https://www.jobswiper.ai" target="_blank">jobswiper.ai</a></div>

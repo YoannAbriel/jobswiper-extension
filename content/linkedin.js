@@ -8,6 +8,9 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
+// i18n helper: chrome.i18n.getMessage, falls back to the key so nothing renders blank.
+const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
+
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()
@@ -208,7 +211,7 @@ function showToast(msg, link) {
     const a = document.createElement('a')
     a.href = link
     a.target = '_blank'
-    a.textContent = 'Open'
+    a.textContent = t('open')
     toast.appendChild(document.createTextNode(' '))
     toast.appendChild(a)
   }
@@ -254,16 +257,16 @@ function aiExtractFallback() {
 }
 
 async function handleSave(btn, retryCount = 0) {
-  btn.innerHTML = '<div class="spinner"></div> Saving...'
+  btn.innerHTML = `<div class="spinner"></div> ${t('saving')}`
   btn.disabled = true
 
   const jobData = extractJobData()
   let effectiveJob = jobData
   if (!window.JobSwiperExtract.isPlausibleJob(jobData)) {
-    btn.innerHTML = '<div class="spinner"></div> Smart extraction...'
+    btn.innerHTML = `<div class="spinner"></div> ${t('smartExtraction')}`
     effectiveJob = await aiExtractFallback()
     if (!effectiveJob) {
-      btn.innerHTML = '⚠️ Could not extract, open the job page and retry'
+      btn.innerHTML = t('couldNotExtractRetry')
       setTimeout(() => resetButton(btn), 3000)
       return
     }
@@ -283,8 +286,8 @@ async function handleSave(btn, retryCount = 0) {
     }
 
     if (!token) {
-      btn.innerHTML = '🔒 Log in first'
-      showToast('Log in to JobSwiper first', API_BASE + '/login')
+      btn.innerHTML = t('loginFirst')
+      showToast(t('loginToJobswiperFirst'), API_BASE + '/login')
       setTimeout(() => resetButton(btn), 2000)
       return
     }
@@ -293,9 +296,9 @@ async function handleSave(btn, retryCount = 0) {
 
     if (response && response.success) {
       btn.className = 'jobswiper-save-btn saved'
-      btn.innerHTML = `${_beamHTML}✓ Saved!`
+      btn.innerHTML = `${_beamHTML}${t('savedCheckExclaim')}`
       const jobDetailUrl = response.likedJobId ? `${API_BASE}/dashboard/jobs/${response.likedJobId}` : `${API_BASE}/dashboard/jobs`
-      showToast('Job saved!', jobDetailUrl)
+      showToast(t('jobSaved'), jobDetailUrl)
       return
     }
 
@@ -308,7 +311,7 @@ async function handleSave(btn, retryCount = 0) {
           return handleSave(btn, retryCount + 1)
         }
       } catch {}
-      btn.innerHTML = '🔒 Reconnect in popup'
+      btn.innerHTML = t('reconnectInPopup')
       setTimeout(() => resetButton(btn), 3000)
       return
     }
@@ -318,15 +321,15 @@ async function handleSave(btn, retryCount = 0) {
       return handleSave(btn, retryCount + 1)
     }
 
-    btn.innerHTML = '❌ ' + esc(response?.error || 'Failed')
+    btn.innerHTML = '❌ ' + esc(response?.error || t('failed'))
     setTimeout(() => resetButton(btn), 2000)
   } catch (err) {
     if (retryCount < 1) {
       await new Promise(r => setTimeout(r, 1000))
       return handleSave(btn, retryCount + 1)
     }
-    btn.innerHTML = '❌ ' + esc(err.message || 'Error')
-    showToast('Error: ' + (err.message || 'Could not connect to JobSwiper'))
+    btn.innerHTML = '❌ ' + esc(err.message || t('errorWord'))
+    showToast(t('toastErrorPrefix', [err.message || t('couldNotConnect')]))
     setTimeout(() => resetButton(btn), 3000)
   }
 }
@@ -338,7 +341,7 @@ const _beamHTML = '<div class="jobswiper-beam"><div></div></div>'
 function resetButton(btn) {
   btn.className = 'jobswiper-save-btn'
   btn.disabled = false
-  btn.innerHTML = `${_beamHTML}${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="16" height="16"></span> ` : ''}Save to JobSwiper`
+  btn.innerHTML = `${_beamHTML}${_logoUrl ? `<span class="jobswiper-logo-wrap"><img src="${_logoUrl}" width="16" height="16"></span> ` : ''}${t('saveToJobswiper')}`
 }
 
 // ============================================================================
@@ -365,7 +368,7 @@ function fetchInlineScore(badge) {
       window.JobSwiperMatch.attachExplanationPopover(badge, score, data)
       if (data.already_saved) {
         _barBtn.className = 'jobswiper-save-btn saved'
-        _barBtn.innerHTML = `${_beamHTML}✓ Saved`
+        _barBtn.innerHTML = `${_beamHTML}${t('savedCheck')}`
       }
     }).catch(() => { badge.remove(); _scoreBadge = null })
   })

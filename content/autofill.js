@@ -7,6 +7,9 @@
 
 const API_BASE = 'https://www.jobswiper.ai'
 
+// i18n helper: chrome.i18n.getMessage, falls back to the key so nothing renders blank.
+const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
+
 function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
   const controller = new AbortController()
   const id = setTimeout(() => controller.abort(), timeoutMs)
@@ -130,7 +133,7 @@ async function tryAutofill() {
     // Show toast
     const toast = document.createElement('div')
     toast.className = 'jobswiper-toast'
-    toast.textContent = `✅ Auto-filled ${filledCount} fields`
+    toast.textContent = t('autofilledFields', [String(filledCount)])
     document.body.appendChild(toast)
     setTimeout(() => toast.remove(), 3000)
   }
@@ -156,7 +159,7 @@ function injectAutofillButton() {
 
   const btn = document.createElement('button')
   btn.className = 'jobswiper-save-btn jobswiper-autofill-btn'
-  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Auto-fill with JobSwiper`
+  btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> ${t('autofillWithJobswiper')}`
   btn.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:99999;'
   btn.addEventListener('click', () => tryAutofill())
   document.body.appendChild(btn)

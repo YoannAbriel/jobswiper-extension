@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "JobSwiper — AI Job Prep",
+  "name": "__MSG_appName__",
   "version": "1.1.0",
-  "description": "Save jobs from Indeed, LinkedIn, Glassdoor & 10+ job boards. Generate tailored CVs, cover letters & interview prep with AI.",
+  "description": "__MSG_appDesc__",
+  "default_locale": "en",
   "minimum_chrome_version": "120",
   "permissions": [
     "activeTab",
