@@ -176,6 +176,13 @@ async function handleSave(btn, jobDataOverride, retryCount = 0) {
 
   let jobData = jobDataOverride || extractJobData()
   if (!jobData.title || !jobData.company) {
+    // From a search-results card the AI net would run against the LIST page
+    // and could save the wrong job, so only detail-page saves get the fallback.
+    if (jobDataOverride) {
+      btn.innerHTML = t('couldNotExtractRetry')
+      setTimeout(() => resetButton(btn), 3000)
+      return
+    }
     // Stage 3: AI net. DOM extraction came up empty, try the AI fallback
     // before giving up (capture-3-stages).
     btn.innerHTML = `<div class="spinner"></div> ${t('smartExtraction')}`
