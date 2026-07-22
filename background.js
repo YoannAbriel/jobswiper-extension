@@ -760,6 +760,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(json)
           return
         }
+        case 'GENERATE_COVER_LETTER': {
+          // Generate a cover letter grounded on the profile + the scraped page
+          // job context. Token stays in the SW; the app route forbids fabrication
+          // and strips dashes/emphasis. 45s: generation is the slowest call.
+          if (sender.id !== chrome.runtime.id) { sendResponse({ success: false }); return }
+          const token = await getValidToken()
+          if (!token) {
+            sendResponse({ success: false, error: t('notAuthenticatedError') })
+            return
+          }
+          const response = await fetchWithTimeout(
+            `${API_BASE}/api/extension/generate-cover-letter`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({
+                jobTitle: message.jobTitle,
+                company: message.company,
+                jobDescription: message.jobDescription,
+                tone: message.tone,
+                length: message.length,
+                language: message.language,
+              }),
+            },
+            45000,
+          )
+          const json = await response.json()
+          sendResponse(json)
+          return
+        }
         default:
           sendResponse({ success: false, error: 'Unknown message type' })
       }

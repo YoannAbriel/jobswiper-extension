@@ -855,6 +855,86 @@
       return out
     }
 
+    // A cover-letter textarea: labelled as a cover letter / motivation letter.
+    // These get the CL generator, not the screening-answer drafter, so they are
+    // excluded from computeQuestions and surfaced separately.
+    // "motivation letter" / "lettre de motivation", not a bare "motivation" (which
+    // would grab a "what motivates you" short-answer question, not a CL field).
+    var CL_LABEL_RE = /cover\s*letter|lettre de motivation|motivation letter|anschreiben|carta de presentaci/i
+
+    function isCoverLetterSig(sig) {
+      var blob = [sig.name, sig.id, sig.aria, sig.label, sig.placeholder].join(' ')
+      return CL_LABEL_RE.test(blob)
+    }
+
+    // The cover-letter textarea on the form (fillable, empty), if any.
+    function findCoverLetterField(formRoot) {
+      var apply = window.__jobswiperApply
+      if (!apply || !formRoot) return null
+      var areas = Array.prototype.slice.call(formRoot.querySelectorAll('textarea'))
+      for (var i = 0; i < areas.length; i++) {
+        var input = areas[i]
+        if (!apply.isFillableInput(input, formRoot)) continue
+        if (dirtyInputs.has(input) || filledInputs.has(input)) continue
+        var sig = buildInputSignals(input)
+        if (isCoverLetterSig(sig)) return { input: input, label: readableLabel(sig) }
+      }
+      return null
+    }
+
+    // Best-effort job context scraped from the current apply page for the cover
+    // letter. Bounded and honest: whatever is not found is simply omitted.
+    function scrapeJobContext() {
+      var ctx = {}
+      try {
+        var h1 = document.querySelector('h1')
+        var title = (h1 && h1.textContent) || document.title || ''
+        title = title.replace(/\s+/g, ' ').trim()
+        if (title) ctx.jobTitle = title.slice(0, 200)
+      } catch (e) {}
+      try {
+        var ogSite = document.querySelector('meta[property="og:site_name"]')
+        var company = (ogSite && ogSite.getAttribute('content')) || ''
+        if (!company) {
+          var host = (location.hostname || '').replace(/^www\./, '').split('.')[0]
+          company = host || ''
+        }
+        if (company) ctx.company = company.slice(0, 120)
+      } catch (e) {}
+      try {
+        var descEl = document.querySelector('[class*="description" i], [class*="job-details" i], article, main')
+        var desc = (descEl && descEl.textContent) || ''
+        desc = desc.replace(/\s+/g, ' ').trim()
+        if (desc.length > 120) ctx.jobDescription = desc.slice(0, 5000)
+      } catch (e) {}
+      return ctx
+    }
+
+    // Generate a cover letter from the scraped job context + the profile (server
+    // side), then insert it into the detected CL textarea. Click-only, grounded,
+    // never auto-submitted; narrated via 'coverletter'. Same-frame only.
+    function generateCoverLetter() {
+      var apply = window.__jobswiperApply
+      var root = apply ? apply.resolveFormRoot() : null
+      var field = root ? findCoverLetterField(root) : null
+      if (!field || !field.input) { busEmit('coverletter', { status: 'nofield' }); return }
+      busEmit('coverletter', { status: 'generating' })
+      var msg = scrapeJobContext()
+      msg.type = 'GENERATE_COVER_LETTER'
+      try {
+        chrome.runtime.sendMessage(msg, function (resp) {
+          if (chrome.runtime.lastError || !resp || resp.success === false || !resp.coverLetter) {
+            busEmit('coverletter', { status: 'error' })
+            return
+          }
+          try { fillInput(field.input, String(resp.coverLetter)) } catch (e) {}
+          busEmit('coverletter', { status: 'done' })
+        })
+      } catch (e) {
+        busEmit('coverletter', { status: 'error' })
+      }
+    }
+
     // ---- free-text screening questions (for the sidebar AI-draft feature) ----
     // A textarea the user has NOT typed in, that is not sensitive and is not one
     // of our mapped profile fields, with a readable label = a screening question
@@ -873,6 +953,8 @@
         var sig = buildInputSignals(input)
         var blob = [sig.autocomplete, sig.name, sig.id, sig.aria, sig.label, sig.placeholder].join(' ')
         if (labelIsSensitive(blob)) continue
+        // A cover-letter textarea belongs to the CL generator, not here.
+        if (isCoverLetterSig(sig)) continue
         // Skip a textarea that is actually one of our mapped profile fields.
         var mapped = false
         for (var f = 0; f < FIELD_MAP.length; f++) {
@@ -924,11 +1006,12 @@
       })
     }
 
-    function planSignature(fields, skipped, questions) {
+    function planSignature(fields, skipped, questions, cl) {
       var a = fields.map(function (f) { return f.key + '=' + f.value }).join('|')
       var b = skipped.map(function (s) { return s.reason + ':' + s.label }).join('|')
       var c = (questions || []).map(function (q) { return q.label }).join('|')
-      return a + '||' + b + '||' + c
+      var d = cl ? cl.label : ''
+      return a + '||' + b + '||' + c + '||' + d
     }
 
     // ---- detection lifecycle -------------------------------------------------
@@ -972,8 +1055,9 @@
       var plan = planFills(root, profile)
       var skipped = computeSkipped(root, plan)
       var questions = computeQuestions(root)
+      var clField = findCoverLetterField(root)
       var fields = planToFields(plan, lang)
-      var sig = planSignature(fields, skipped, questions)
+      var sig = planSignature(fields, skipped, questions, clField)
       if (sig === lastPlanSig && detectState === 'ready') return
       lastPlan = plan
       lastQuestions = questions
@@ -983,6 +1067,7 @@
         fields: fields,
         skipped: skipped,
         questions: questions.map(function (q) { return { label: q.label } }),
+        coverLetter: clField ? { label: clField.label } : null,
       })
     }
 
@@ -1147,6 +1232,7 @@
       apply.stopFill = stopFill
       apply.selectCv = selectCv
       apply.draftAnswer = draftAnswer
+      apply.generateCoverLetter = generateCoverLetter
     }
     exposeCommands()
 

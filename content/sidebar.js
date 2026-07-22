@@ -131,6 +131,11 @@
       drafting: 'Drafting...',
       answerInserted: 'Inserted, review it before you submit',
       answerFailed: 'Could not draft, try again',
+      clHead: 'Cover letter',
+      clGenerate: 'Generate',
+      clGenerating: 'Writing...',
+      clInserted: 'Inserted, review it before you submit',
+      clFailed: 'Could not generate, try again',
     },
     fr: {
       collapse: 'Réduire',
@@ -195,6 +200,11 @@
       drafting: 'Rédaction...',
       answerInserted: 'Inséré, relisez avant d’envoyer',
       answerFailed: 'Échec, réessayez',
+      clHead: 'Lettre de motivation',
+      clGenerate: 'Générer',
+      clGenerating: 'Rédaction...',
+      clInserted: 'Insérée, relisez avant d’envoyer',
+      clFailed: 'Échec, réessayez',
     },
     es: {
       collapse: 'Ocultar',
@@ -259,6 +269,11 @@
       drafting: 'Redactando...',
       answerInserted: 'Insertado, revísalo antes de enviar',
       answerFailed: 'No se pudo redactar, inténtalo de nuevo',
+      clHead: 'Carta de presentación',
+      clGenerate: 'Generar',
+      clGenerating: 'Redactando...',
+      clInserted: 'Insertada, revísala antes de enviar',
+      clFailed: 'No se pudo generar, inténtalo de nuevo',
     },
   }
 
@@ -530,6 +545,9 @@
             '<div class="msg-card error-card"><b id="errorTitle">' + esc(T.errorTitle) + '</b><p id="errorText"></p></div>' +
             '<div class="attn" id="attn" style="display:none"><div class="attn-head" id="attnHead">' + esc(T.attnHead) + '</div><div id="attnRows"></div></div>' +
             '<div class="questions" id="questions" style="display:none"><div class="q-head" id="qHead"><span class="spark">' + IC.spark + '</span>' + esc(T.questionsHead) + '</div><div id="questionRows"></div></div>' +
+            '<div class="questions" id="coverletter" style="display:none"><div class="q-head" id="clHeadEl"><span class="spark">' + IC.spark + '</span>' + esc(T.clHead) + '</div>' +
+              '<div class="q-row"><div class="q-label-wrap" style="flex:1;min-width:0"><div class="q-label" id="clLabel"></div><div class="q-status" id="clStatus" style="display:none"></div></div>' +
+              '<button class="q-draft" id="clBtn" type="button">' + IC.spark + '<span>' + esc(T.clGenerate) + '</span></button></div></div>' +
             '<div class="cta-row" id="applyCta">' +
               '<button class="btn btn-primary" id="fillBtn" disabled>' + IC.check + '<span id="fillBtnText">' + esc(T.fillBtn(0)) + '</span></button>' +
               '<button class="btn btn-ghost" id="cvBtn">' + esc(T.attachCta) + '</button>' +
@@ -644,6 +662,7 @@
     var errb = applyView && applyView.querySelector('.error-card b'); if (errb && currentState !== 'error') errb.textContent = T.errorTitle
     setTextById('attnHead', T.attnHead)
     var qh = $('qHead'); if (qh) qh.innerHTML = '<span class="spark">' + IC.spark + '</span>' + esc(T.questionsHead)
+    var clh = $('clHeadEl'); if (clh) clh.innerHTML = '<span class="spark">' + IC.spark + '</span>' + esc(T.clHead)
     // ctx card defaults (renderCtx owns it once a ctx event lands)
     if (!window.__jobswiperSidebarCtxSeen) {
       var tag = $('ctxTag'); if (tag) tag.textContent = T.cvTailored
@@ -905,6 +924,7 @@
     // screening questions (AI draft, explicit per-question)
     readyQuestions = (data && Array.isArray(data.questions)) ? data.questions : []
     renderQuestions(readyQuestions)
+    renderCoverLetter((data && data.coverLetter) || null)
     // CTA
     var fb = $('fillBtn'); if (fb) fb.disabled = readyFields.length === 0
     var fbt = $('fillBtnText'); if (fbt) fbt.textContent = T.fillBtn(readyFields.length)
@@ -1018,6 +1038,35 @@
     } else if (data.status === 'error') {
       resetDraftBtn(e.btn)
       e.status.style.display = 'block'; e.status.className = 'q-status err'; e.status.textContent = T.answerFailed
+    }
+  }
+
+  // ---- cover letter (AI generate + insert) -----------------------------------
+  function renderCoverLetter(cl) {
+    var box = $('coverletter'); if (!box) return
+    if (!cl) { box.style.display = 'none'; return }
+    box.style.display = ''
+    var lbl = $('clLabel'); if (lbl) lbl.textContent = cl.label || t().clHead
+    var st = $('clStatus'); if (st) { st.style.display = 'none'; st.className = 'q-status'; st.textContent = '' }
+    var btn = $('clBtn'); if (btn) { btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(t().clGenerate) + '</span>' }
+  }
+
+  // Bus 'coverletter' {status:'generating'|'done'|'error'|'nofield'}. autofill has
+  // already inserted the generated letter into the page textarea on 'done'.
+  function onCoverLetter(data) {
+    var T = t()
+    var btn = $('clBtn'), st = $('clStatus')
+    if (!btn || !st) return
+    var status = data && data.status
+    if (status === 'generating') {
+      btn.disabled = true; btn.innerHTML = '<span class="qspin"></span>'
+      st.style.display = 'block'; st.className = 'q-status'; st.textContent = T.clGenerating
+    } else if (status === 'done') {
+      btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(T.clGenerate) + '</span>'
+      st.style.display = 'block'; st.className = 'q-status ok'; st.textContent = T.clInserted
+    } else {
+      btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(T.clGenerate) + '</span>'
+      st.style.display = 'block'; st.className = 'q-status err'; st.textContent = T.clFailed
     }
   }
 
@@ -1268,6 +1317,11 @@
     })
     var stopBtn = $('stopBtn'); if (stopBtn) stopBtn.addEventListener('click', function () { cmd('stopFill') })
     var cvBtn = $('cvBtn'); if (cvBtn) cvBtn.addEventListener('click', function () { cmd('attachCv') })
+    var clBtn = $('clBtn'); if (clBtn) clBtn.addEventListener('click', function () {
+      if (clBtn.disabled) return
+      onCoverLetter({ status: 'generating' })
+      cmd('generateCoverLetter')
+    })
     var ctxChange = $('ctxChange'); if (ctxChange) ctxChange.addEventListener('click', function () { switchView('cvs') })
 
     // restore collapse preference; else start collapsed (slim tab) until a form
@@ -1293,6 +1347,7 @@
       done: onDone,
       error: onError,
       answer: onAnswer,
+      coverletter: onCoverLetter,
     })
 
     // fallback context (in case ctx fired before we subscribed)
