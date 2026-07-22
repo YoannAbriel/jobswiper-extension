@@ -602,8 +602,103 @@
       })
     }
 
+    // ---- sidebar command wrapper (bus) --------------------------------------
+    // The sidebar (content/autofill.js surface) is the primary UI. It drives CV
+    // attach through window.__jobswiperApply.attachCv(), and listens on the bus
+    // for attach {status} progress. This wrapper only ORCHESTRATES the existing
+    // flow (resolveSafeInputs + withPdf + attachOrFallback); it never changes the
+    // attach / file-upload logic itself.
+
+    // Emit on the shared bus if apply-shared.js initialized it. No-op fallback so
+    // this script is safe even if it somehow loads before apply-shared.
+    function emitBus(evt, data) {
+      var apply = window.__jobswiperApply
+      if (apply && typeof apply.emit === 'function') {
+        try { apply.emit(evt, data) } catch (e) {}
+      }
+    }
+
+    // Human-facing label for the CV currently selected in this control's state.
+    function currentCvLabel() {
+      var cvs = (cvsData && cvsData.cvs) || []
+      for (var i = 0; i < cvs.length; i++) {
+        if (cvs[i].id === currentCvId) {
+          var label = cvs[i].title || t(lang).cvFallback
+          if (cvs[i].isPerJob) label += t(lang).perJobSuffix
+          return label
+        }
+      }
+      return filename || t(lang).cvFallback
+    }
+
+    // Ensure the CV list is loaded and a currentCvId is selected. Reuses the same
+    // SW round-trip as the trigger flow; resolves true when a CV is ready.
+    function ensureCvsLoaded() {
+      if (cvsData && cvsData.cvs && cvsData.cvs.length && isValidUuid(currentCvId)) {
+        return Promise.resolve(true)
+      }
+      return getCvs().then(function (resp) {
+        if (!resp || resp.ok === false) return false
+        cvsData = resp
+        if (!resp.cvs || !resp.cvs.length) return false
+        currentCvId = resp.selectedCvId || resp.defaultCvId || resp.cvs[0].id
+        filename = deriveFilename(resp.filenameBase)
+        return true
+      })
+    }
+
+    // Command the sidebar calls: attach the selected CV into the resolved resume
+    // field, emitting attach {status:"attaching"|"done"|"error", cvName} as it
+    // goes. Runs headless (no closed-shadow panel) so the sidebar stays the only
+    // surface. Attach vs honest download fallback stays governed by the untouched
+    // attachOrFallback / selectMode logic.
+    function attachCv() {
+      var tr = t(lang)
+      var cvName = currentCvLabel()
+      emitBus('attach', { status: 'attaching', cvName: cvName })
+      return ensureCvsLoaded().then(function (ready) {
+        if (!ready) {
+          emitBus('attach', { status: 'error', cvName: cvName })
+          return
+        }
+        cvName = currentCvLabel()
+        var safe = resolveSafeInputs()
+        var mode = selectMode(safe.length)
+        var attached = false
+        var errored = false
+        function statusShim(text, isErr) { if (isErr) errored = true }
+        return withPdf(statusShim, function (bytes, name) {
+          cvName = name || cvName
+          if (mode === 'download') {
+            // No safe native input: honest download fallback, same as the panel.
+            triggerBlobDownload(bytes, name)
+            showToast(tr.downloaded(name))
+          } else {
+            // mode 'attach' or 'pick': place into the first safe input. The
+            // sidebar drives selection, so there is no on-page click-to-pick step.
+            attachOrFallback(safe[0], bytes, name)
+          }
+          attached = true
+        }).then(function () {
+          emitBus('attach', { status: (attached && !errored) ? 'done' : 'error', cvName: cvName })
+        })
+      })
+    }
+
+    // Register the command on the shared object (apply-shared.js owns it and is
+    // listed first in the manifest apply block; fall back to a bare object if it
+    // is somehow missing so registration never throws).
+    var applyObj = window.__jobswiperApply || (window.__jobswiperApply = {})
+    applyObj.attachCv = attachCv
+
     // ---- trigger injection + SPA re-injection -------------------------------
     function injectTrigger() {
+      // The Apply sidebar (content/sidebar.js) is now the single surface: it
+      // drives CV attach through window.__jobswiperApply.attachCv(). The old
+      // standalone bottom-right trigger + control panel below are kept for
+      // reference but never rendered, so there is no double UI.
+      return
+      // eslint-disable-next-line no-unreachable
       if (document.querySelector('.jobswiper-cv-attach-btn')) return
       var apply = window.__jobswiperApply
       // apply-shared.js provides the form root. If it is not present, degrade

@@ -312,6 +312,32 @@ async function getCvsList(likedJobId) {
   }
 }
 
+// ── Apply-surface stats for the sidebar Activité view (SW-only fetch) ──
+// The sidebar (content/autofill.js surface) asks the SW for a small activity
+// summary (saved / applied / recent). Token stays in the SW; this only PROXIES
+// the existing GET /api/extension/stats endpoint (no new app endpoint), same
+// getValidToken() + version-header pattern as the other handlers.
+async function getStats() {
+  const token = await getValidToken()
+  if (!token) return { ok: false, error: 'auth' }
+  try {
+    const res = await fetchWithTimeout(`${API_BASE}/api/extension/stats`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-JobSwiper-Ext-Version': extVersion(),
+      },
+    }, 10000)
+    if (res.status === 401) return { ok: false, error: 'auth' }
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` }
+    const data = await res.json()
+    // Pass the server fields (saved / applied / recent / ...) through at the top
+    // level, mirroring getCvsList's shape so the sidebar reads them directly.
+    return { ok: true, ...(data && typeof data === 'object' ? data : {}) }
+  } catch {
+    return { ok: false, error: 'network' }
+  }
+}
+
 // SW-side chunked base64 of the raw PDF bytes. String.fromCharCode.apply over
 // 32 KB windows keeps us under the argument-count limit for large PDFs.
 function arrayBufferToBase64(buffer) {
@@ -667,6 +693,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // Persist the chosen CV for a known job (no-op without a likedJobId).
           if (sender.id !== chrome.runtime.id) { sendResponse({ ok: false }); return }
           sendResponse(await recordSelectedCv(message.likedJobId || null, message.cvId))
+          return
+        }
+        case 'GET_STATS': {
+          // Activity summary for the sidebar Activité view. Proxies the existing
+          // GET /api/extension/stats; token stays in the SW. Gated to this
+          // extension's own contexts (mirrors GET_PROFILE / GET_CVS).
+          if (sender.id !== chrome.runtime.id) { sendResponse({ ok: false }); return }
+          sendResponse(await getStats())
           return
         }
         case 'LOGOUT': {

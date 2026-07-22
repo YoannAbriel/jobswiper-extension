@@ -126,15 +126,35 @@
         "https://*.bamboohr.com/*",
         "https://*.jazz.co/*"
       ],
-      "js": ["content/apply-shared.js", "content/autofill.js", "content/cv-attach.js"],
+      "js": ["content/apply-shared.js", "content/autofill.js", "content/cv-attach.js", "content/sidebar.js"],
       "css": ["content/jobswiper.css"],
       "run_at": "document_idle"
     },
     {
       "matches": ["https://smartapply.indeed.com/*"],
-      "js": ["content/apply-shared.js", "content/autofill.js", "content/cv-attach.js"],
+      "js": ["content/apply-shared.js", "content/autofill.js", "content/cv-attach.js", "content/sidebar.js"],
       "css": ["content/jobswiper.css"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/icon128.png", "icons/icon48.png"],
+      "matches": [
+        "https://*.greenhouse.io/*",
+        "https://*.lever.co/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.icims.com/*",
+        "https://*.smartrecruiters.com/*",
+        "https://*.taleo.net/*",
+        "https://*.workable.com/*",
+        "https://*.breezy.hr/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.recruitee.com/*",
+        "https://*.bamboohr.com/*",
+        "https://*.jazz.co/*",
+        "https://smartapply.indeed.com/*"
+      ]
     }
   ],
   "action": {

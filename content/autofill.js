@@ -49,6 +49,7 @@
         first_name: 'First name', last_name: 'Last name', full_name: 'Full name',
         email: 'Email', phone: 'Phone', city: 'City',
         linkedin_url: 'LinkedIn', website: 'Website',
+        current_company: 'Company', headline: 'Current title', github: 'GitHub',
       },
     },
     fr: {
@@ -69,6 +70,7 @@
         first_name: 'Prénom', last_name: 'Nom', full_name: 'Nom complet',
         email: 'E-mail', phone: 'Téléphone', city: 'Ville',
         linkedin_url: 'LinkedIn', website: 'Site web',
+        current_company: 'Entreprise', headline: 'Poste actuel', github: 'GitHub',
       },
     },
     es: {
@@ -89,6 +91,7 @@
         first_name: 'Nombre', last_name: 'Apellido', full_name: 'Nombre completo',
         email: 'Correo', phone: 'Teléfono', city: 'Ciudad',
         linkedin_url: 'LinkedIn', website: 'Sitio web',
+        current_company: 'Empresa', headline: 'Puesto actual', github: 'GitHub',
       },
     },
   }
@@ -643,69 +646,367 @@
       ))
     }
 
-    var running = false
-    function onButtonClick() {
-      if (running) return
-      running = true
-      getProfile().then(function (resp) {
-        running = false
-        var lang = pickLang(resp && resp.locale)
-        if (!resp || resp.ok === false) {
-          openLinkPanel('signin', lang)
-          return
+    // =========================================================================
+    // Bus-driven surface (sidebar). The sidebar (content/sidebar.js, loaded LAST
+    // in the manifest apply block) is now the primary surface: it subscribes to
+    // window.__jobswiperApply events and calls startFill/stopFill/selectCv. This
+    // script no longer renders its own bottom-right button or the closed-shadow
+    // review panel; both are superseded by the sidebar feed. The old panel code
+    // above is kept intact (code path preserved) but is never shown while the
+    // sidebar owns the surface, so there is never a double Fill UI.
+    // =========================================================================
+
+    // apply-shared.js initializes the bus on the SAME window.__jobswiperApply
+    // object and is listed FIRST in the manifest, so emit is normally present.
+    // Guard with a no-op fallback in case this script somehow loads first.
+    function busEmit(evt, data) {
+      var apply = window.__jobswiperApply
+      if (apply && typeof apply.emit === 'function') apply.emit(evt, data)
+    }
+
+    // ---- context (active CV + profile) via the service worker ----------------
+    // getProfile() already lives above (GET_PROFILE). getCvs() mirrors it for
+    // GET_CVS. Both keep the auth token in the SW; the content script only ever
+    // receives ids/titles and non-sensitive profile fields.
+    function getCvs() {
+      return new Promise(function (resolve) {
+        try {
+          chrome.runtime.sendMessage({ type: 'GET_CVS', likedJobId: null }, function (resp) {
+            if (chrome.runtime.lastError) { resolve({ ok: false }); return }
+            resolve(resp || { ok: false })
+          })
+        } catch (e) {
+          resolve({ ok: false })
         }
-        var profile = resp.profile || {}
-        if (!isProfileUsable(profile)) {
-          openLinkPanel('complete', pickLang(resp.locale))
-          return
-        }
-        var apply = window.__jobswiperApply
-        var formRoot = apply ? apply.resolveFormRoot() : null
-        if (!formRoot) { showToast(t(lang).nothingToast); return }
-        var plan = planFills(formRoot, profile)
-        if (!plan.length) { showToast(t(lang).nothingToast); return }
-        openReviewPanel(plan, lang)
       })
     }
 
-    // ---- button injection + SPA re-injection --------------------------------
-    function injectButton() {
-      if (document.querySelector('.jobswiper-autofill-btn')) return
-      var apply = window.__jobswiperApply
-      // apply-shared.js is registered in the manifest in Phase 3; degrade
-      // silently (no button, no crash) until it is present.
-      if (!apply) return
-      if (!apply.resolveFormRoot()) return
+    var ctxProfileResp = null
+    var ctxCvsResp = null
+    var ctxPromise = null
+    var ctxSig = ''
+    var ctxFailAt = 0
+    var CTX_FAIL_TTL_MS = 20000
 
-      var lang = pickLang(null)
-      var btn = document.createElement('button')
-      btn.className = 'jobswiper-save-btn jobswiper-autofill-btn'
-      btn.type = 'button'
-      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> '
-      btn.appendChild(document.createTextNode(t(lang).button))
-      btn.style.cssText = 'position:fixed;bottom:24px;right:24px;z-index:2147483646;'
-      btn.addEventListener('click', onButtonClick)
-      document.body.appendChild(btn)
+    // Fetch the profile + CV context once, cache it, and emit 'ctx'. A failed
+    // fetch (signed out / offline) is cached only briefly so a later scan can
+    // recover after the user signs in, without hammering the SW on every scan.
+    function ensureCtx(force) {
+      var now = Date.now()
+      if (force) { ctxProfileResp = null; ctxCvsResp = null; ctxPromise = null; ctxFailAt = 0 }
+      if (ctxProfileResp && ctxProfileResp.ok !== false) return Promise.resolve(ctxProfileResp)
+      if (ctxProfileResp && ctxProfileResp.ok === false && (now - ctxFailAt) < CTX_FAIL_TTL_MS) {
+        return Promise.resolve(ctxProfileResp)
+      }
+      if (ctxPromise) return ctxPromise
+      ctxPromise = getProfile().then(function (presp) {
+        ctxProfileResp = presp || { ok: false }
+        if (ctxProfileResp.ok === false) ctxFailAt = Date.now()
+        return getCvs().then(function (cresp) {
+          ctxCvsResp = cresp || { ok: false }
+          ctxPromise = null
+          emitCtx()
+          return ctxProfileResp
+        }, function () {
+          ctxCvsResp = { ok: false }
+          ctxPromise = null
+          emitCtx()
+          return ctxProfileResp
+        })
+      }, function () {
+        ctxProfileResp = { ok: false }
+        ctxFailAt = Date.now()
+        ctxPromise = null
+        emitCtx()
+        return ctxProfileResp
+      })
+      return ctxPromise
     }
 
-    function removeButtonIfGone() {
-      // If the application form disappeared (SPA route change), drop the button.
-      var apply = window.__jobswiperApply
-      if (!apply) return
-      if (!apply.resolveFormRoot()) {
-        var existing = document.querySelector('.jobswiper-autofill-btn')
-        if (existing) existing.remove()
-        closePanel()
+    function profileNameOf(profile) {
+      if (!profile) return null
+      var full = profile.full_name && String(profile.full_name).trim()
+      if (full) return full
+      var parts = [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim()
+      return parts || null
+    }
+
+    // Resolve the active CV (recorded selection, else per-job default, else the
+    // first listed) into the { name, tailored, jobLabel } shape the sidebar wants.
+    function activeCvOf(cvsResp) {
+      if (!cvsResp || cvsResp.ok === false) return null
+      var list = Array.isArray(cvsResp.cvs) ? cvsResp.cvs : []
+      if (!list.length) return null
+      var activeId = cvsResp.selectedCvId || cvsResp.defaultCvId || list[0].id
+      var active = null
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].id === activeId) { active = list[i]; break }
+      }
+      active = active || list[0]
+      return {
+        name: active.title || null,
+        tailored: !!active.isPerJob,
+        jobLabel: (cvsResp.jobCv && cvsResp.jobCv.title) || null,
       }
     }
 
+    // Emit 'ctx' only when it actually changed, so repeated scans do not spam it.
+    function emitCtx() {
+      var profile = (ctxProfileResp && ctxProfileResp.profile) || null
+      var payload = {
+        cv: activeCvOf(ctxCvsResp),
+        profileName: profileNameOf(profile),
+        signedIn: !!(ctxProfileResp && ctxProfileResp.ok !== false),
+      }
+      var cv = payload.cv
+      var sig = (payload.profileName || 'none') + '|' + payload.signedIn + '|' +
+        (cv ? (cv.name + '/' + cv.tailored + '/' + cv.jobLabel) : 'none')
+      if (sig === ctxSig) return
+      ctxSig = sig
+      busEmit('ctx', payload)
+    }
+
+    // ---- skipped fields (for the sidebar review feed) ------------------------
+    // The plan (planFills) is authoritative for what WILL be filled; this derives
+    // the parallel "won't fill" list without touching planFills. Sensitive fields
+    // are those the shared denylist excludes; 'required' flags a required input we
+    // could not map to a profile value, so the user knows to complete it by hand.
+    function firstLine(s) {
+      if (!s) return ''
+      return String(s).split('\n')[0].replace(/\s+/g, ' ').trim()
+    }
+
+    function readableLabel(sig) {
+      var cand = firstLine(sig.label) || firstLine(sig.aria) ||
+        firstLine(sig.placeholder) || firstLine(sig.name) || firstLine(sig.id)
+      cand = cand.replace(/[*:\s]+$/, '').trim()
+      if (cand.length > 60) cand = cand.slice(0, 57) + '...'
+      return cand || 'Field'
+    }
+
+    function isRequiredInput(input) {
+      if (!input) return false
+      if (input.required) return true
+      return input.getAttribute && input.getAttribute('aria-required') === 'true'
+    }
+
+    function computeSkipped(formRoot, plan) {
+      var apply = window.__jobswiperApply
+      if (!apply || !formRoot) return []
+      var plannedInputs = new Set()
+      for (var p = 0; p < plan.length; p++) plannedInputs.add(plan[p].input)
+      var inputs = Array.prototype.slice.call(formRoot.querySelectorAll('input, textarea'))
+      var out = []
+      var seen = Object.create(null)
+      for (var i = 0; i < inputs.length; i++) {
+        var input = inputs[i]
+        if (!apply.isFillableInput(input, formRoot)) continue
+        if (dirtyInputs.has(input) || filledInputs.has(input)) continue
+        var sig = buildInputSignals(input)
+        var blob = [sig.autocomplete, sig.name, sig.id, sig.aria, sig.label, sig.placeholder].join(' ')
+        var reason = null
+        if (labelIsSensitive(blob)) reason = 'sensitive'
+        else if (isRequiredInput(input) && !plannedInputs.has(input)) reason = 'required'
+        if (!reason) continue
+        var label = readableLabel(sig)
+        var key = reason + '|' + normalize(label)
+        if (seen[key]) continue
+        seen[key] = true
+        out.push({ label: label, reason: reason })
+      }
+      return out
+    }
+
+    function fieldLabel(key, lang) {
+      var tr = t(lang)
+      return (tr.fields && tr.fields[key]) || key
+    }
+
+    function planToFields(plan, lang) {
+      return plan.map(function (p) {
+        return { key: p.fieldKey, label: fieldLabel(p.fieldKey, lang), value: p.value }
+      })
+    }
+
+    function planSignature(fields, skipped) {
+      var a = fields.map(function (f) { return f.key + '=' + f.value }).join('|')
+      var b = skipped.map(function (s) { return s.reason + ':' + s.label }).join('|')
+      return a + '||' + b
+    }
+
+    // ---- detection lifecycle -------------------------------------------------
+    // detectState: 'idle' | 'detecting' | 'ready' | 'empty' | 'error:signin' |
+    // 'error:complete'. It gates re-emits so a busy MutationObserver does not
+    // spam the sidebar feed.
+    var detectState = 'idle'
+    var detectInFlight = false
+    var lastPlan = []
+    var lastPlanSig = ''
+
+    function emitEmpty() {
+      if (detectState === 'empty') return
+      detectState = 'empty'
+      lastPlan = []
+      lastPlanSig = ''
+      busEmit('empty')
+    }
+
+    function emitAuthError(kind, lang) {
+      var tr = t(lang)
+      var msg = kind === 'signin' ? tr.signInBody : tr.completeBody
+      var href = kind === 'signin' ? (API_BASE + '/login') : (API_BASE + '/dashboard/profile')
+      var stateKey = 'error:' + kind
+      if (detectState === stateKey) return
+      detectState = stateKey
+      lastPlanSig = ''
+      busEmit('error', { message: msg, kind: kind, href: href })
+    }
+
+    function finishDetect(presp) {
+      var apply = window.__jobswiperApply
+      // Re-resolve the root: the DOM may have changed during the async ctx fetch.
+      var root = apply ? apply.resolveFormRoot() : null
+      if (!root) { emitEmpty(); return }
+      var lang = pickLang(presp && presp.locale)
+      if (!presp || presp.ok === false) { emitAuthError('signin', lang); return }
+      var profile = presp.profile || {}
+      if (!isProfileUsable(profile)) { emitAuthError('complete', lang); return }
+      var plan = planFills(root, profile)
+      var skipped = computeSkipped(root, plan)
+      var fields = planToFields(plan, lang)
+      var sig = planSignature(fields, skipped)
+      if (sig === lastPlanSig && detectState === 'ready') return
+      lastPlan = plan
+      lastPlanSig = sig
+      detectState = 'ready'
+      busEmit('ready', { fields: fields, skipped: skipped })
+    }
+
+    function runDetect() {
+      var apply = window.__jobswiperApply
+      var root = apply ? apply.resolveFormRoot() : null
+      if (!root) { emitEmpty(); return }
+      if (detectInFlight) return
+      detectInFlight = true
+      if (detectState === 'idle' || detectState === 'empty') {
+        detectState = 'detecting'
+        busEmit('detecting')
+      }
+      ensureCtx().then(function (presp) {
+        try { finishDetect(presp) } finally { detectInFlight = false }
+      }, function () { detectInFlight = false })
+    }
+
+    // ---- fill lifecycle (commands: startFill / stopFill) ---------------------
+    // startFill drives EXACTLY the existing planFills + fillInput path. The plan
+    // is re-resolved against the live DOM so it reflects anything the user typed
+    // since detection. Filling is staggered so the sidebar can show progress and
+    // so combobox typeaheads have room to resolve; stopFill aborts in flight.
+    var filling = false
+    var fillAbort = false
+    var fillTimer = null
+    var fillPlan = []
+    var fillIndex = 0
+    var fillTotal = 0
+    var fillSkipped = []
+    var fillLang = 'en'
+
+    function fillStep() {
+      if (fillAbort) return
+      if (fillIndex >= fillTotal) {
+        filling = false
+        busEmit('filled', { count: fillTotal })
+        busEmit('done', { filled: fillTotal, total: fillTotal, skipped: fillSkipped })
+        try { showToast(t(fillLang).filledToast(fillTotal)) } catch (e) {}
+        return
+      }
+      var item = fillPlan[fillIndex]
+      try {
+        fillInput(item.input, item.value)
+      } catch (e) {
+        busEmit('error', { message: String((e && e.message) || e) })
+      }
+      fillIndex++
+      busEmit('progress', {
+        index: fillIndex,
+        total: fillTotal,
+        field: { key: item.fieldKey, label: fieldLabel(item.fieldKey, fillLang) },
+      })
+      fillTimer = setTimeout(fillStep, 140)
+    }
+
+    function runFill(plan, skipped, lang) {
+      filling = true
+      fillAbort = false
+      fillPlan = plan
+      fillIndex = 0
+      fillTotal = plan.length
+      fillSkipped = skipped
+      fillLang = lang
+      fillStep()
+    }
+
+    function startFill() {
+      if (filling) return
+      var apply = window.__jobswiperApply
+      var root = apply ? apply.resolveFormRoot() : null
+      if (!root) { emitEmpty(); return }
+      ensureCtx().then(function (presp) {
+        var lang = pickLang(presp && presp.locale)
+        if (!presp || presp.ok === false) { emitAuthError('signin', lang); return }
+        var profile = presp.profile || {}
+        if (!isProfileUsable(profile)) { emitAuthError('complete', lang); return }
+        var plan = planFills(root, profile)
+        var skipped = computeSkipped(root, plan)
+        if (!plan.length) {
+          busEmit('done', { filled: 0, total: 0, skipped: skipped })
+          return
+        }
+        runFill(plan, skipped, lang)
+      })
+    }
+
+    function stopFill() {
+      if (!filling) return
+      fillAbort = true
+      if (fillTimer) { clearTimeout(fillTimer); fillTimer = null }
+      filling = false
+      busEmit('done', { filled: fillIndex, total: fillTotal, skipped: fillSkipped })
+    }
+
+    // ---- selectCv command ----------------------------------------------------
+    // Persist the chosen CV via the SW (no-op server-side without a likedJobId,
+    // which a raw ATS page has none of), then force-refresh + re-emit ctx so the
+    // sidebar reflects the new active CV.
+    function selectCv(cvId) {
+      return new Promise(function (resolve) {
+        try {
+          chrome.runtime.sendMessage({ type: 'SELECT_CV', likedJobId: null, cvId: cvId }, function () {
+            void chrome.runtime.lastError
+            ensureCtx(true).then(function () { resolve(true) }, function () { resolve(false) })
+          })
+        } catch (e) {
+          resolve(false)
+        }
+      })
+    }
+
+    // Attach the commands to the shared object synchronously (before sidebar.js,
+    // which is loaded after this script, runs) so the sidebar finds them on init.
+    function exposeCommands() {
+      var apply = window.__jobswiperApply
+      if (!apply) return
+      apply.startFill = startFill
+      apply.stopFill = stopFill
+      apply.selectCv = selectCv
+    }
+    exposeCommands()
+
+    // ---- scan scheduling + SPA re-detection ----------------------------------
     var debounceTimer = null
     function scheduleScan() {
       if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(function () {
-        removeButtonIfGone()
-        injectButton()
-      }, 500)
+      debounceTimer = setTimeout(runDetect, 500)
     }
 
     var observer = null
@@ -715,8 +1016,8 @@
       observer.observe(document.body, { childList: true, subtree: true })
     }
 
-    // SPA route changes (Workday/Greenhouse) do not reload the page; hook
-    // history so the button re-evaluates on navigation.
+    // SPA route changes (Workday/Greenhouse) do not reload the page; hook history
+    // so detection re-evaluates on navigation.
     function hookHistory() {
       var origPush = history.pushState
       history.pushState = function () {
@@ -730,10 +1031,11 @@
     window.addEventListener('pagehide', function () {
       if (observer) { observer.disconnect(); observer = null }
       if (debounceTimer) clearTimeout(debounceTimer)
+      if (fillTimer) { clearTimeout(fillTimer); fillTimer = null }
     })
 
     function boot() {
-      injectButton()
+      runDetect()
       startObserver()
       hookHistory()
     }

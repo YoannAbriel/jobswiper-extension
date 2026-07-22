@@ -222,10 +222,56 @@
     return true
   }
 
+  // ---- event bus -----------------------------------------------------------
+  // A dependency-free pub/sub so the three apply content scripts (autofill.js,
+  // cv-attach.js) and the sidebar can talk over this SAME window.__jobswiperApply
+  // object without any shared framework. apply-shared.js is listed FIRST in the
+  // manifest apply block, so it is the one that initializes the bus; the other
+  // scripts only read window.__jobswiperApply. State is a plain { evt: [cb] } map.
+  //
+  // emit() also retains the last payload per event so a late subscriber (the
+  // sidebar loads AFTER autofill.js) can pull the current state via last(evt)
+  // instead of missing an event that already fired.
+  var busListeners = Object.create(null)
+  var busLast = Object.create(null)
+
+  function on(evt, cb) {
+    if (!evt || typeof cb !== 'function') return function () {}
+    if (!busListeners[evt]) busListeners[evt] = []
+    busListeners[evt].push(cb)
+    return function () { off(evt, cb) }
+  }
+
+  function off(evt, cb) {
+    var arr = busListeners[evt]
+    if (!arr) return
+    var i = arr.indexOf(cb)
+    if (i !== -1) arr.splice(i, 1)
+  }
+
+  function emit(evt, data) {
+    if (!evt) return
+    busLast[evt] = data
+    var arr = busListeners[evt]
+    if (!arr || !arr.length) return
+    // Iterate a copy so a handler that unsubscribes mid-dispatch cannot make us
+    // skip a sibling handler. A throwing handler must not break the others.
+    var snapshot = arr.slice()
+    for (var i = 0; i < snapshot.length; i++) {
+      try { snapshot[i](data) } catch (e) {}
+    }
+  }
+
+  function last(evt) { return busLast[evt] }
+
   g.__jobswiperApply = {
     resolveFormRoot: resolveFormRoot,
     isFillableInput: isFillableInput,
     SENSITIVE_DENYLIST: SENSITIVE_DENYLIST,
+    on: on,
+    off: off,
+    emit: emit,
+    last: last,
   }
 
   // node-only export channel so the pure pieces (denylist, form-rejection,
