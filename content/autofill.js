@@ -1119,7 +1119,15 @@
 
     function armIfLikely() {
       var apply = window.__jobswiperApply
-      if (apply && apply.isLikelyJobApplication && !apply.isLikelyJobApplication()) return
+      if (apply && apply.isLikelyJobApplication && !apply.isLikelyJobApplication()) {
+        // LinkedIn Easy Apply opens as a modal with no URL change, so the gate is
+        // false at boot. Arm the observer anyway on LinkedIn job pages so we catch
+        // the modal when it opens; runDetect re-checks the gate on each debounced
+        // mutation and stays a no-op until the apply form actually appears.
+        // Everywhere else, stay fully inert until the page looks like an apply.
+        if (apply.isLinkedInJobPage && apply.isLinkedInJobPage()) startObserver()
+        return
+      }
       runDetect()
       startObserver()
     }

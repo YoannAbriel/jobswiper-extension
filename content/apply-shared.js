@@ -330,6 +330,22 @@
     return false
   }
 
+  // A LinkedIn job page (pure core so it is node-testable). LinkedIn Easy Apply
+  // opens as a MODAL with no URL change, so the gate is false at page load and
+  // only an already-armed observer will notice the apply form appearing. The
+  // apply layer uses this to arm its observer on LinkedIn job pages even before
+  // the gate passes, staying fully inert everywhere else.
+  function isLinkedInJobHost(host, path) {
+    host = (host || '').toLowerCase()
+    path = (path || '').toLowerCase()
+    return hostMatches(host, 'linkedin.com') &&
+      (path.indexOf('/jobs') === 0 || path.indexOf('/comm/jobs') === 0)
+  }
+
+  function isLinkedInJobPage() {
+    return isLinkedInJobHost(location.hostname, location.pathname)
+  }
+
   // Text signals. Kept multilingual (EN/FR/ES/DE) but small.
   var APPLY_INTENT_RE = /(submit application|apply now|apply for|easy apply|start your application|complete application|postuler|candidature|d[ée]poser ma candidature|solicitar empleo|enviar solicitud|inscribirse|aplicar ahora|jetzt bewerben|bewerbung|bewerben)/i
   var RESUME_CTX_RE = /(resume|r[ée]sum[ée]|\bcv\b|curriculum|cover letter|lettre de motivation|lebenslauf|hoja de vida)/i
@@ -519,6 +535,8 @@
     isLikelyJobApplication: isLikelyJobApplication,
     // Uncached raw decision (forces a fresh DOM scan).
     isLikelyJobApplicationNow: computeIsLikelyJobApplication,
+    // LinkedIn job page (Easy Apply opens as a no-URL-change modal).
+    isLinkedInJobPage: isLinkedInJobPage,
     on: on,
     off: off,
     emit: emit,
@@ -539,6 +557,7 @@
       hostMatches: hostMatches,
       matchesKnownAts: matchesKnownAts,
       isBlockedSurface: isBlockedSurface,
+      isLinkedInJobHost: isLinkedInJobHost,
     }
   }
 })()
