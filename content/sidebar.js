@@ -70,7 +70,7 @@
   var I18N = {
     en: {
       collapse: 'Collapse',
-      state: { detecting: 'Analyzing…', ready: 'Ready', filling: 'Filling', done: 'Done', empty: 'No form', error: 'Error' },
+      state: { detecting: 'Analyzing…', ready: 'Ready', filling: 'Filling', done: 'Done', empty: 'No form', error: 'Error', offer: 'Job offer' },
       nav: { apply: 'Apply', cvs: 'CV', activity: 'Activity', profile: 'Profile', plan: 'Plan' },
       applyWith: 'Applying with',
       cvTailored: 'TAILORED CV', cvBase: 'BASE CV',
@@ -147,10 +147,20 @@
       hideUntilVisit: 'Hide until next visit',
       disableDomain: 'Disable on this domain',
       disableAll: 'Disable on all pages',
+      offerHead: 'This job offer',
+      offerAnalyzing: 'Checking your match...',
+      offerMatch: 'Your match',
+      offerStrengths: 'You have',
+      offerGaps: 'Gaps to address',
+      offerNoProfile: 'Sign in and complete your profile on JobSwiper to see your match.',
+      offerError: 'Could not check this offer. Reopen the panel to try again.',
+      offerSave: 'Save this job',
+      offerSaved: 'Saved',
+      offerTailor: 'Tailor a CV for this job',
     },
     fr: {
       collapse: 'Réduire',
-      state: { detecting: 'Analyse…', ready: 'Prêt', filling: 'Remplissage', done: 'Terminé', empty: 'Aucun formulaire', error: 'Erreur' },
+      state: { detecting: 'Analyse…', ready: 'Prêt', filling: 'Remplissage', done: 'Terminé', empty: 'Aucun formulaire', error: 'Erreur', offer: 'Offre d\'emploi' },
       nav: { apply: 'Postuler', cvs: 'CV', activity: 'Activité', profile: 'Profil', plan: 'Plan' },
       applyWith: 'Candidature avec',
       cvTailored: 'CV SUR-MESURE', cvBase: 'CV DE BASE',
@@ -227,10 +237,20 @@
       hideUntilVisit: 'Masquer jusqu’à la prochaine visite',
       disableDomain: 'Désactiver sur ce domaine',
       disableAll: 'Désactiver sur toutes les pages',
+      offerHead: 'Cette offre',
+      offerAnalyzing: 'Analyse de votre match...',
+      offerMatch: 'Votre match',
+      offerStrengths: 'Vous avez',
+      offerGaps: 'Points à combler',
+      offerNoProfile: 'Connectez-vous et complétez votre profil sur JobSwiper pour voir votre match.',
+      offerError: 'Impossible d\'analyser cette offre. Rouvrez le panneau pour réessayer.',
+      offerSave: 'Sauvegarder cette offre',
+      offerSaved: 'Sauvegardé',
+      offerTailor: 'Créer un CV pour cette offre',
     },
     es: {
       collapse: 'Ocultar',
-      state: { detecting: 'Analizando…', ready: 'Listo', filling: 'Rellenando', done: 'Hecho', empty: 'Sin formulario', error: 'Error' },
+      state: { detecting: 'Analizando…', ready: 'Listo', filling: 'Rellenando', done: 'Hecho', empty: 'Sin formulario', error: 'Error', offer: 'Oferta de empleo' },
       nav: { apply: 'Postular', cvs: 'CV', activity: 'Actividad', profile: 'Perfil', plan: 'Plan' },
       applyWith: 'Postulando con',
       cvTailored: 'CV A MEDIDA', cvBase: 'CV BASE',
@@ -307,6 +327,16 @@
       hideUntilVisit: 'Ocultar hasta la próxima visita',
       disableDomain: 'Desactivar en este dominio',
       disableAll: 'Desactivar en todas las páginas',
+      offerHead: 'Esta oferta',
+      offerAnalyzing: 'Analizando tu match...',
+      offerMatch: 'Tu match',
+      offerStrengths: 'Tienes',
+      offerGaps: 'Puntos a mejorar',
+      offerNoProfile: 'Inicia sesión y completa tu perfil en JobSwiper para ver tu match.',
+      offerError: 'No se pudo analizar esta oferta. Vuelve a abrir el panel para reintentar.',
+      offerSave: 'Guardar esta oferta',
+      offerSaved: 'Guardado',
+      offerTailor: 'Crear un CV para esta oferta',
     },
   }
 
@@ -477,6 +507,28 @@
     '.is-empty .empty-card,.is-error .error-card{display:block;}',
     '.is-empty .feed,.is-empty .attn,.is-empty .questions,.is-empty .done-card,.is-empty .cta-row,',
     '.is-error .feed,.is-error .attn,.is-error .questions,.is-error .done-card{display:none;}',
+    // Job-offer view (viewing a listing, not applying): match score + skills.
+    '.is-offer .feed,.is-offer .scan,.is-offer .attn,.is-offer .questions,.is-offer #coverletter,',
+    '.is-offer .done-card,.is-offer .cta-row,.is-offer .empty-card,.is-offer .error-card{display:none;}',
+    '.is-offer .offer-card{display:block;}',
+    '.offer-card{display:none;margin-top:2px;animation:jsw-fade .2s ease;}',
+    '.offer-job{font-weight:800;font-size:14px;color:var(--ink);line-height:1.35;margin-bottom:12px;}',
+    '.offer-job small{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-top:2px;}',
+    '.offer-loading{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:13px;font-weight:600;padding:6px 0 10px;}',
+    '.offer-loading .spin{width:14px;height:14px;border:2px solid var(--blue-050);border-top-color:var(--blue);border-radius:50%;animation:jsw-rot .6s linear infinite;flex:none;}',
+    '.offer-score{display:flex;align-items:center;gap:13px;padding:13px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);margin-bottom:12px;}',
+    '.score-ring{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;flex:none;font-weight:800;font-size:18px;color:#fff;font-variant-numeric:tabular-nums;}',
+    '.score-meta{min-width:0;}',
+    '.score-level{font-weight:800;font-size:14px;color:var(--ink);}',
+    '.score-sub{font-size:12px;color:var(--muted);font-weight:600;margin-top:2px;line-height:1.45;}',
+    '.offer-sec{margin-bottom:12px;}',
+    '.offer-sec-label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:6px;}',
+    '.chips-row{display:flex;flex-wrap:wrap;gap:5px;}',
+    '.chip-s{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;}',
+    '.chip-s.have{background:var(--emerald-bg);color:var(--emerald);}',
+    '.chip-s.gap{background:var(--sunset-bg);color:var(--sunset);}',
+    '.offer-note{font-size:12.5px;color:var(--muted);font-weight:600;line-height:1.5;padding:6px 0 12px;}',
+    '.offer-cta{display:flex;flex-direction:column;gap:8px;margin-top:4px;}',
     '.questions{margin-top:14px;border:1px solid var(--border);border-radius:12px;overflow:hidden;}',
     '.q-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:12px;font-weight:800;background:var(--surface-2);color:var(--ink);}',
     '.q-head .spark{color:var(--blue);display:inline-flex;}',
@@ -605,6 +657,17 @@
             '<div class="questions" id="coverletter" style="display:none"><div class="q-head" id="clHeadEl"><span class="spark">' + IC.spark + '</span>' + esc(T.clHead) + '</div>' +
               '<div class="q-row"><div class="q-label-wrap" style="flex:1;min-width:0"><div class="q-label" id="clLabel"></div><div class="q-status" id="clStatus" style="display:none"></div></div>' +
               '<button class="q-draft" id="clBtn" type="button">' + IC.spark + '<span>' + esc(T.clGenerate) + '</span></button></div></div>' +
+            '<div class="offer-card" id="offerCard">' +
+              '<div class="offer-job" id="offerJob"></div>' +
+              '<div class="offer-loading" id="offerLoading"><span class="spin"></span><span>' + esc(T.offerAnalyzing) + '</span></div>' +
+              '<div id="offerBody" style="display:none">' +
+                '<div class="offer-score"><div class="score-ring" id="offerRing" style="background:var(--faint)">--</div><div class="score-meta"><div class="score-level" id="offerLevel"></div><div class="score-sub" id="offerSummary"></div></div></div>' +
+                '<div class="offer-sec" id="offerHaveSec" style="display:none"><div class="offer-sec-label">' + esc(T.offerStrengths) + '</div><div class="chips-row" id="offerHave"></div></div>' +
+                '<div class="offer-sec" id="offerGapSec" style="display:none"><div class="offer-sec-label">' + esc(T.offerGaps) + '</div><div class="chips-row" id="offerGap"></div></div>' +
+              '</div>' +
+              '<div class="offer-note" id="offerNote" style="display:none"></div>' +
+              '<div class="offer-cta"><button class="btn btn-primary" id="offerSaveBtn">' + IC.plus + '<span id="offerSaveText">' + esc(T.offerSave) + '</span></button></div>' +
+            '</div>' +
             '<div class="cta-row" id="applyCta">' +
               '<button class="btn btn-primary" id="fillBtn" disabled>' + IC.check + '<span id="fillBtnText">' + esc(T.fillBtn(0)) + '</span></button>' +
               '<button class="btn btn-ghost" id="cvBtn">' + esc(T.attachCta) + '</button>' +
@@ -672,6 +735,9 @@
   var chipMap = []         // seeded fchip elements (index-aligned to readyFields)
   var readyQuestions = []  // [{label}] screening questions from the last ready event
   var qRowMap = []         // { btn, status } per question row (index-aligned)
+  var offerLoaded = false  // the job-offer match view has run for offerUrl
+  var offerJob = null      // the scraped job used for analysis + save
+  var offerUrl = ''        // the URL the current offer view was loaded for
   var userSetCollapse = false
   var loaded = { cvs: false, activity: false, profile: false }
   var lastSkipped = 0
@@ -750,6 +816,7 @@
     setTextById('openEditorBtn', T.openEditor)
     setTextById('activityLabel', T.yourApps)
     setTextById('savePageText', T.saveThisPage)
+    if (currentState !== 'offer') setTextById('offerSaveText', T.offerSave)
     var vp = $('viewPipelineLink'); if (vp) vp.textContent = T.viewPipeline + ' →'
     setTextById('profileLabel', T.profileUsed)
     setTextById('editProfileBtn', T.editProfile)
@@ -1189,6 +1256,125 @@
     }
   }
 
+  // ---- job-offer match view (viewing a listing, not applying) ----------------
+  function scrapeJobForAnalysis() {
+    var job = { url: location.href }
+    try {
+      var h1 = document.querySelector('h1')
+      var title = (h1 && h1.textContent) || document.title || ''
+      job.title = title.replace(/\s+/g, ' ').trim().slice(0, 200)
+    } catch (e) { /* noop */ }
+    try {
+      var og = document.querySelector('meta[property="og:site_name"]')
+      var company = (og && og.getAttribute('content')) || (location.hostname || '').replace(/^www\./, '').split('.')[0] || ''
+      job.company = String(company).slice(0, 120)
+    } catch (e) { /* noop */ }
+    try {
+      if (window.JobSwiperExtract && typeof window.JobSwiperExtract.collectPageText === 'function') {
+        job.description = window.JobSwiperExtract.collectPageText(8000) // reads + strips PII
+      }
+    } catch (e) { /* noop */ }
+    return job
+  }
+  function scoreColor(score) {
+    if (score >= 75) return 'var(--emerald)'
+    if (score >= 50) return 'var(--blue)'
+    if (score >= 30) return 'var(--sunset)'
+    return 'var(--danger)'
+  }
+  function renderOfferJob(job) {
+    var el = $('offerJob'); if (!el) return
+    var title = (job && job.title) || t().offerHead
+    el.innerHTML = esc(title) + (job && job.company ? '<small>' + esc(job.company) + '</small>' : '')
+  }
+  function chipsInto(id, list, cls) {
+    var el = $(id); if (!el) return 0
+    el.innerHTML = ''
+    var arr = Array.isArray(list) ? list.slice(0, 12) : []
+    var n = 0
+    arr.forEach(function (s) {
+      if (!s) return
+      var c = document.createElement('span'); c.className = 'chip-s ' + cls; c.textContent = String(s)
+      el.appendChild(c); n++
+    })
+    return n
+  }
+  function renderOfferResult(resp) {
+    var T = t()
+    var loading = $('offerLoading'); if (loading) loading.style.display = 'none'
+    var failed = !resp || resp.success === false
+    var score = resp && typeof resp.match_score === 'number' ? resp.match_score : null
+    if (score == null) {
+      // No number: a transient/auth/network failure (offerError, retryable) is
+      // NOT the same as an authenticated user with an empty profile (offerNoProfile).
+      var note = $('offerNote')
+      if (note) { note.style.display = 'block'; note.textContent = failed ? T.offerError : T.offerNoProfile }
+      // Let a failed check retry on the next open instead of latching a stale error.
+      if (failed) { offerLoaded = false; offerUrl = '' }
+      return
+    }
+    var body = $('offerBody'); if (body) body.style.display = 'block'
+    var ring = $('offerRing'); if (ring) { ring.textContent = String(Math.round(score)); ring.style.background = scoreColor(score) }
+    var lvl = $('offerLevel'); if (lvl) lvl.textContent = T.offerMatch
+    var sum = $('offerSummary'); if (sum) sum.textContent = (resp.summary || '').replace(/\s+/g, ' ').trim()
+    var hn = chipsInto('offerHave', resp.matched_skills, 'have')
+    var gn = chipsInto('offerGap', resp.missing_skills, 'gap')
+    var hs = $('offerHaveSec'); if (hs) hs.style.display = hn ? 'block' : 'none'
+    var gs = $('offerGapSec'); if (gs) gs.style.display = gn ? 'block' : 'none'
+  }
+  // Reset the one-shot latch when the page URL changed under us (SPA navigation
+  // on LinkedIn/Indeed swaps the job without a reload). Prevents showing, and
+  // saving, a stale job. Clears the card if it is currently on screen.
+  function resetOfferIfStale() {
+    if (!offerLoaded || !offerUrl || offerUrl === location.href) return
+    offerLoaded = false; offerJob = null; offerUrl = ''
+    var body = $('offerBody'); if (body) body.style.display = 'none'
+    var note = $('offerNote'); if (note) note.style.display = 'none'
+    var loading = $('offerLoading'); if (loading) loading.style.display = 'none'
+  }
+  function runOfferView() {
+    if (offerLoaded) return
+    offerLoaded = true
+    offerUrl = location.href
+    setState('offer')
+    offerJob = scrapeJobForAnalysis()
+    renderOfferJob(offerJob)
+    var loading = $('offerLoading'); if (loading) loading.style.display = 'flex'
+    var body = $('offerBody'); if (body) body.style.display = 'none'
+    var note = $('offerNote'); if (note) note.style.display = 'none'
+    send({ type: 'ANALYZE_JOB', job: offerJob }, function (resp) { renderOfferResult(resp) })
+  }
+  // Show the offer view when the panel opens on a relevant listing that is NOT an
+  // apply form (and the apply flow has not already taken over).
+  function maybeShowOffer() {
+    resetOfferIfStale()
+    if (offerLoaded) return
+    if (sbEl && sbEl.classList.contains('collapsed')) return // tab-only: don't burn an analysis
+    if (currentState === 'ready' || currentState === 'filling' || currentState === 'done') return
+    var b = bus()
+    if (!b) return
+    var isApply = typeof b.isLikelyJobApplication === 'function' && b.isLikelyJobApplication()
+    var relevant = typeof b.isRelevantSite === 'function' && b.isRelevantSite()
+    if (!isApply && relevant) runOfferView()
+  }
+  function saveOffer() {
+    var T = t()
+    var btn = $('offerSaveBtn'), txt = $('offerSaveText')
+    if (!btn || btn.disabled) return
+    // Never save a job scraped from a different URL than the one on screen now.
+    var job = (offerJob && offerUrl === location.href) ? offerJob : scrapeJobForAnalysis()
+    btn.disabled = true; if (txt) txt.textContent = T.saving
+    var payload = {
+      title: job.title, company: job.company, description: job.description,
+      url: job.url || location.href, source: 'page-capture', extraction_method: 'scrape',
+    }
+    send({ type: 'SAVE_JOB', data: payload }, function (saved) {
+      var ok = !!(saved && saved.success)
+      if (txt) txt.textContent = ok ? T.offerSaved : T.saveFailed
+      if (!ok) setTimeout(function () { if (btn) btn.disabled = false; if (txt) txt.textContent = T.offerSave }, 2500)
+    })
+  }
+
   // ---- cover letter (AI generate + insert) -----------------------------------
   function renderCoverLetter(cl) {
     var box = $('coverletter'); if (!box) return
@@ -1366,6 +1552,10 @@
     if (flowLocked) return // keep the done summary; the filled form still exists
     setState('empty')
     var fb = $('fillBtn'); if (fb) fb.disabled = true
+    // "No apply form here" is the strongest signal this is a listing: if the panel
+    // is open on a relevant job site, show the match view (and refresh it after a
+    // SPA nav to another job). maybeShowOffer no-ops when collapsed or irrelevant.
+    maybeShowOffer()
   }
 
   function onError(data) {
@@ -1453,6 +1643,7 @@
   function expand() {
     if (sbEl) sbEl.classList.remove('collapsed')
     applySqueeze(true)
+    maybeShowOffer()
   }
   function userExpand() {
     expand()
@@ -1624,6 +1815,7 @@
       cmd('generateCoverLetter')
     })
     var ctxChange = $('ctxChange'); if (ctxChange) ctxChange.addEventListener('click', function () { switchView('cvs') })
+    var offerSaveBtn = $('offerSaveBtn'); if (offerSaveBtn) offerSaveBtn.addEventListener('click', saveOffer)
     var savePageBtn = $('savePageBtn'); if (savePageBtn) savePageBtn.addEventListener('click', saveThisPage)
     var disconnectBtn = $('disconnectBtn'); if (disconnectBtn) disconnectBtn.addEventListener('click', function () {
       send({ type: 'LOGOUT' }, function () { loaded.profile = false; loadProfile() })

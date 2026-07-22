@@ -776,6 +776,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(json)
           return
         }
+        case 'ANALYZE_JOB': {
+          // Match score + matched/missing skills for a scraped job offer (shown in
+          // the sidebar when viewing a listing, not applying). Deterministic +
+          // fast server-side; token stays in the SW. 15s.
+          if (sender.id !== chrome.runtime.id) { sendResponse({ success: false }); return }
+          const token = await getValidToken()
+          if (!token) {
+            sendResponse({ success: false, error: t('notAuthenticatedError') })
+            return
+          }
+          const response = await fetchWithTimeout(
+            `${API_BASE}/api/extension/analyze-job`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify(message.job || {}),
+            },
+            15000,
+          )
+          const json = await response.json()
+          sendResponse(json)
+          return
+        }
         case 'GENERATE_COVER_LETTER': {
           // Generate a cover letter grounded on the profile + the scraped page
           // job context. Token stays in the SW; the app route forbids fabrication
