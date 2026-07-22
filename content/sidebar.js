@@ -136,6 +136,7 @@
       clGenerating: 'Writing...',
       clInserted: 'Inserted, review it before you submit',
       clFailed: 'Could not generate, try again',
+      aiLimit: 'Limit reached, upgrade on JobSwiper',
     },
     fr: {
       collapse: 'Réduire',
@@ -205,6 +206,7 @@
       clGenerating: 'Rédaction...',
       clInserted: 'Insérée, relisez avant d’envoyer',
       clFailed: 'Échec, réessayez',
+      aiLimit: 'Limite atteinte, améliorez votre offre',
     },
     es: {
       collapse: 'Ocultar',
@@ -274,6 +276,7 @@
       clGenerating: 'Redactando...',
       clInserted: 'Insertada, revísala antes de enviar',
       clFailed: 'No se pudo generar, inténtalo de nuevo',
+      aiLimit: 'Límite alcanzado, mejora tu plan',
     },
   }
 
@@ -1035,6 +1038,9 @@
     } else if (data.status === 'done') {
       resetDraftBtn(e.btn)
       e.status.style.display = 'block'; e.status.className = 'q-status ok'; e.status.textContent = T.answerInserted
+    } else if (data.status === 'limit') {
+      resetDraftBtn(e.btn)
+      e.status.style.display = 'block'; e.status.className = 'q-status err'; e.status.textContent = T.aiLimit
     } else if (data.status === 'error') {
       resetDraftBtn(e.btn)
       e.status.style.display = 'block'; e.status.className = 'q-status err'; e.status.textContent = T.answerFailed
@@ -1064,6 +1070,9 @@
     } else if (status === 'done') {
       btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(T.clGenerate) + '</span>'
       st.style.display = 'block'; st.className = 'q-status ok'; st.textContent = T.clInserted
+    } else if (status === 'limit') {
+      btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(T.clGenerate) + '</span>'
+      st.style.display = 'block'; st.className = 'q-status err'; st.textContent = T.aiLimit
     } else {
       btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(T.clGenerate) + '</span>'
       st.style.display = 'block'; st.className = 'q-status err'; st.textContent = T.clFailed

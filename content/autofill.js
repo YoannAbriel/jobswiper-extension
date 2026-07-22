@@ -923,7 +923,9 @@
       msg.type = 'GENERATE_COVER_LETTER'
       try {
         chrome.runtime.sendMessage(msg, function (resp) {
-          if (chrome.runtime.lastError || !resp || resp.success === false || !resp.coverLetter) {
+          if (chrome.runtime.lastError) { busEmit('coverletter', { status: 'error' }); return }
+          if (resp && resp.limitType) { busEmit('coverletter', { status: 'limit' }); return }
+          if (!resp || resp.success === false || !resp.coverLetter) {
             busEmit('coverletter', { status: 'error' })
             return
           }
@@ -983,7 +985,11 @@
       busEmit('answer', { index: index, label: label, status: 'drafting' })
       try {
         chrome.runtime.sendMessage({ type: 'ANSWER_QUESTION', question: q.label }, function (resp) {
-          if (chrome.runtime.lastError || !resp || resp.success === false || !resp.answer) {
+          if (chrome.runtime.lastError) { busEmit('answer', { index: index, label: label, status: 'error' }); return }
+          // A real quota cap (lifetime/daily/monthly) carries limitType; show it
+          // as a limit, not a generic failure (a transient 503 has no limitType).
+          if (resp && resp.limitType) { busEmit('answer', { index: index, label: label, status: 'limit' }); return }
+          if (!resp || resp.success === false || !resp.answer) {
             busEmit('answer', { index: index, label: label, status: 'error' })
             return
           }
