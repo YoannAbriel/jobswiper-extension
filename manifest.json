@@ -113,7 +113,7 @@
     },
     {
       "matches": ["https://*/*"],
-      "js": ["content/apply-shared.js", "content/autofill.js", "content/cv-attach.js", "content/sidebar.js"],
+      "js": ["utils/extract-helpers.js", "content/apply-shared.js", "content/autofill.js", "content/cv-attach.js", "content/sidebar.js"],
       "css": ["content/jobswiper.css"],
       "run_at": "document_idle"
     },
@@ -143,7 +143,6 @@
     }
   ],
   "action": {
-    "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

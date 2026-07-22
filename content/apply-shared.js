@@ -360,6 +360,33 @@
     return isLinkedInJobHost(location.hostname, location.pathname)
   }
 
+  // Job-board hosts (mirror the capture-script manifest matches). Used, together
+  // with the ATS allowlist and the apply-form heuristic, to decide whether the
+  // sidebar may be OPENED from the toolbar icon on a given site: the sidebar is a
+  // job-only surface, so the icon does nothing (falls back to the dashboard) on
+  // an unrelated site.
+  var JOB_BOARD_HOSTS = [
+    'indeed.com', 'indeed.fr', 'indeed.de', 'indeed.co.uk', 'indeed.co.in', 'indeed.ca', 'indeed.com.au',
+    'linkedin.com', 'glassdoor.com', 'glassdoor.fr', 'glassdoor.de',
+    'jobup.ch', 'jobs.ch', 'welcometothejungle.com',
+  ]
+
+  function isJobBoardHost(host) {
+    host = (host || '').toLowerCase()
+    for (var i = 0; i < JOB_BOARD_HOSTS.length; i++) {
+      if (hostMatches(host, JOB_BOARD_HOSTS[i])) return true
+    }
+    return false
+  }
+
+  // A "relevant" site for the sidebar: a known job board, a known ATS host, or a
+  // page that looks like an application form. The toolbar icon opens the sidebar
+  // only here; everywhere else it is inert (the caller opens the dashboard).
+  function isRelevantSite() {
+    var host = (location.hostname || '').toLowerCase()
+    return isJobBoardHost(host) || matchesKnownAts(host) || isLikelyJobApplication()
+  }
+
   // Text signals. Kept multilingual (EN/FR/ES/DE) but small.
   var APPLY_INTENT_RE = /(submit application|apply now|apply for|easy apply|start your application|complete application|postuler|candidature|d[ée]poser ma candidature|solicitar empleo|enviar solicitud|inscribirse|aplicar ahora|jetzt bewerben|bewerbung|bewerben)/i
   var RESUME_CTX_RE = /(resume|r[ée]sum[ée]|\bcv\b|curriculum|cover letter|lettre de motivation|lebenslauf|hoja de vida)/i
@@ -646,6 +673,8 @@
     isLikelyJobApplicationNow: computeIsLikelyJobApplication,
     // LinkedIn job page (Easy Apply opens as a no-URL-change modal).
     isLinkedInJobPage: isLinkedInJobPage,
+    // Job board / ATS / apply page: where the toolbar icon may open the sidebar.
+    isRelevantSite: isRelevantSite,
     on: on,
     off: off,
     emit: emit,

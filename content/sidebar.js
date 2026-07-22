@@ -137,6 +137,12 @@
       clInserted: 'Inserted, review it before you submit',
       clFailed: 'Could not generate, try again',
       aiLimit: 'Limit reached, upgrade on JobSwiper',
+      saveThisPage: 'Save this page',
+      saving: 'Saving...',
+      savedJob: function (t) { return 'Saved: ' + t },
+      saveNotJob: 'This does not look like a job posting',
+      saveFailed: 'Could not save this page',
+      disconnect: 'Disconnect',
     },
     fr: {
       collapse: 'Réduire',
@@ -207,6 +213,12 @@
       clInserted: 'Insérée, relisez avant d’envoyer',
       clFailed: 'Échec, réessayez',
       aiLimit: 'Limite atteinte, améliorez votre offre',
+      saveThisPage: 'Sauvegarder cette page',
+      saving: 'Sauvegarde...',
+      savedJob: function (t) { return 'Sauvegardé : ' + t },
+      saveNotJob: 'Ça ne ressemble pas à une offre d’emploi',
+      saveFailed: 'Impossible de sauvegarder cette page',
+      disconnect: 'Se déconnecter',
     },
     es: {
       collapse: 'Ocultar',
@@ -277,6 +289,12 @@
       clInserted: 'Insertada, revísala antes de enviar',
       clFailed: 'No se pudo generar, inténtalo de nuevo',
       aiLimit: 'Límite alcanzado, mejora tu plan',
+      saveThisPage: 'Guardar esta página',
+      saving: 'Guardando...',
+      savedJob: function (t) { return 'Guardado: ' + t },
+      saveNotJob: 'Esto no parece una oferta de empleo',
+      saveFailed: 'No se pudo guardar esta página',
+      disconnect: 'Cerrar sesión',
     },
   }
 
@@ -568,6 +586,8 @@
           // ACTIVITY
           '<section class="view" id="view-activity">' +
             '<div class="section-label" id="activityLabel">' + esc(T.yourApps) + '</div>' +
+            '<button class="btn btn-ghost" id="savePageBtn" style="width:100%;margin-bottom:8px">' + IC.plus + '<span id="savePageText">' + esc(T.saveThisPage) + '</span></button>' +
+            '<div class="q-status" id="savePageStatus" style="display:none;margin-bottom:10px"></div>' +
             '<div id="activityList"></div>' +
             '<a class="link block" id="viewPipelineLink" href="' + API_BASE + '/dashboard/pipeline" target="_blank" rel="noreferrer noopener">' + esc(T.viewPipeline) + ' →</a>' +
           '</section>' +
@@ -576,6 +596,7 @@
             '<div class="section-label" id="profileLabel">' + esc(T.profileUsed) + '</div>' +
             '<div id="profileBody"></div>' +
             '<a class="btn btn-ghost" id="editProfileBtn" href="' + API_BASE + '/dashboard/profile" target="_blank" rel="noreferrer noopener" style="margin-top:12px">' + esc(T.editProfile) + '</a>' +
+            '<button class="link" id="disconnectBtn" style="margin-top:12px;color:var(--danger)">' + esc(T.disconnect) + '</button>' +
           '</section>' +
           // PLAN (static placeholder for v1)
           '<section class="view" id="view-plan">' +
@@ -676,9 +697,11 @@
     setTextById('genCvText', T.genCv)
     setTextById('openEditorBtn', T.openEditor)
     setTextById('activityLabel', T.yourApps)
+    setTextById('savePageText', T.saveThisPage)
     var vp = $('viewPipelineLink'); if (vp) vp.textContent = T.viewPipeline + ' →'
     setTextById('profileLabel', T.profileUsed)
     setTextById('editProfileBtn', T.editProfile)
+    setTextById('disconnectBtn', T.disconnect)
     setTextById('planLabel', T.yourPlan)
     setTextById('planTag', T.planTitle)
     setTextById('planTitleEl', T.planTitle)
@@ -805,6 +828,63 @@
       }
       el.innerHTML = html
     })
+  }
+
+  // ---- save this page (universal job capture, migrated from the old popup) ----
+  // Cheap client-side plausibility gate (ported from the popup) so a random
+  // long-form page never burns a ~20s AI PARSE_JOB_PAGE call before failing.
+  var SAVE_SIGNALS = [
+    /apply|postuler|candidature/i,
+    /salary|salaire|compensation/i,
+    /requirements|qualifications|profil recherch/i,
+    /full[- ]?time|part[- ]?time|cdi|cdd|temps plein/i,
+    /responsibilit|missions|about the role|votre r[oô]le/i,
+    /experience|exp[eé]rience/i,
+  ]
+  function saveScore(text) {
+    var n = 0
+    for (var i = 0; i < SAVE_SIGNALS.length; i++) { if (SAVE_SIGNALS[i].test(text)) n++ }
+    return n
+  }
+  function showSaveStatus(msg, isErr) {
+    var st = $('savePageStatus'); if (!st) return
+    st.style.display = 'block'
+    st.className = 'q-status' + (isErr ? ' err' : ' ok')
+    st.textContent = msg
+  }
+  function saveThisPage() {
+    var T = t()
+    var btn = $('savePageBtn'), txt = $('savePageText')
+    if (!btn || btn.disabled) return
+    var text = ''
+    try {
+      if (window.JobSwiperExtract && typeof window.JobSwiperExtract.collectPageText === 'function') {
+        text = window.JobSwiperExtract.collectPageText(15000) // reads + strips PII in one call
+      }
+    } catch (e) { /* noop */ }
+    if (!text || text.length < 200 || saveScore(text) < 2) { showSaveStatus(T.saveNotJob, true); return }
+    btn.disabled = true; if (txt) txt.textContent = T.saving
+    showSaveStatus(T.saving, false)
+    send({ type: 'PARSE_JOB_PAGE', pageText: text, url: location.href }, function (parsed) {
+      if (!parsed || !parsed.success || !parsed.job) { finishSave(false, null); return }
+      var job = parsed.job
+      var payload = {}
+      for (var k in job) { if (Object.prototype.hasOwnProperty.call(job, k)) payload[k] = job[k] }
+      payload.source = 'page-capture'
+      payload.extraction_method = 'ai'
+      payload.url = job.url || location.href
+      send({ type: 'SAVE_JOB', data: payload }, function (saved) {
+        finishSave(!!(saved && saved.success), job)
+      })
+    })
+  }
+  function finishSave(ok, job) {
+    var T = t()
+    var btn = $('savePageBtn'), txt = $('savePageText')
+    if (btn) btn.disabled = false
+    if (txt) txt.textContent = T.saveThisPage
+    if (ok) { showSaveStatus(T.savedJob((job && job.title) || ''), false); loaded.activity = false; loadActivity() }
+    else showSaveStatus(T.saveFailed, true)
   }
 
   function loadProfile() {
@@ -1332,10 +1412,17 @@
       cmd('generateCoverLetter')
     })
     var ctxChange = $('ctxChange'); if (ctxChange) ctxChange.addEventListener('click', function () { switchView('cvs') })
+    var savePageBtn = $('savePageBtn'); if (savePageBtn) savePageBtn.addEventListener('click', saveThisPage)
+    var disconnectBtn = $('disconnectBtn'); if (disconnectBtn) disconnectBtn.addEventListener('click', function () {
+      send({ type: 'LOGOUT' }, function () { loaded.profile = false; loadProfile() })
+    })
 
     // restore collapse preference; else start collapsed (slim tab) until a form
     // is detected, at which point onReady auto-expands.
     storageGet('sidebarCollapsed', function (o) {
+      // Opened from the toolbar icon: always show it expanded, ignore the stored
+      // collapse preference this once.
+      if (iconOpenRequested) { iconOpenRequested = false; userSetCollapse = true; expand(); return }
       if (o && typeof o.sidebarCollapsed === 'boolean') {
         userSetCollapse = true
         if (o.sidebarCollapsed) collapseSilent(); else expand()
@@ -1370,6 +1457,7 @@
   // the ATS page's <html lang>. Never block more than 500ms on it. Runs at most
   // once; safe to call from any lazy-mount trigger.
   var _mounted = false
+  var iconOpenRequested = false  // set when the toolbar icon asks to open expanded
   function doMount() {
     if (_mounted) return
     _mounted = true
@@ -1453,6 +1541,30 @@
     }
     window.addEventListener('popstate', maybeMount)
   }
+
+  // Reveal the sidebar in response to the toolbar icon: force-mount (bypassing the
+  // auto-gate, so it also opens on a job listing that is not yet an apply form)
+  // and expand, but ONLY on a relevant site. Returns whether it opened, so the SW
+  // can fall back to opening the dashboard when it did not.
+  function revealSidebar() {
+    var b = bus()
+    if (!(b && typeof b.isRelevantSite === 'function' && b.isRelevantSite())) return false
+    if (!_mounted) { iconOpenRequested = true; doMount() } else { userExpand() }
+    return true
+  }
+
+  // Toolbar icon click (the popup is gone) is relayed by the SW as JSW_OPEN_SIDEBAR.
+  try {
+    if (chrome && chrome.runtime && chrome.runtime.onMessage) {
+      chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+        if (msg && msg.type === 'JSW_OPEN_SIDEBAR') {
+          var ok = false
+          try { ok = revealSidebar() } catch (e) { ok = false }
+          sendResponse({ opened: ok })
+        }
+      })
+    }
+  } catch (e) { /* noop */ }
 
   function boot() {
     // The gate reads the DOM; give apply-shared a beat to initialize the bus and

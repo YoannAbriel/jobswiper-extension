@@ -592,6 +592,22 @@ if (chrome.webNavigation?.onHistoryStateUpdated) {
 
 // Async message handlers wrapped in a single dispatch, so we can use await
 // throughout and always return `true` to keep the channel open.
+// Toolbar icon (no popup anymore): open the sidebar on a relevant page (job
+// board / ATS / application form). The sidebar is a job-only surface, so on an
+// unrelated page, or a page without our content script (chrome://, the store),
+// we fall back to opening the JobSwiper dashboard so the click is never inert.
+chrome.action.onClicked.addListener((tab) => {
+  if (!tab || !tab.id) return
+  const openDashboard = () => { try { chrome.tabs.create({ url: `${API_BASE}/dashboard` }) } catch (e) { /* noop */ } }
+  if (!tab.url || !tab.url.startsWith('http')) { openDashboard(); return }
+  try {
+    chrome.tabs.sendMessage(tab.id, { type: 'JSW_OPEN_SIDEBAR' }, (resp) => {
+      // No content script, or the page is not a relevant site -> dashboard.
+      if (chrome.runtime.lastError || !resp || !resp.opened) openDashboard()
+    })
+  } catch (e) { openDashboard() }
+})
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   ;(async () => {
     try {
