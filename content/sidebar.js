@@ -143,6 +143,10 @@
       saveNotJob: 'This does not look like a job posting',
       saveFailed: 'Could not save this page',
       disconnect: 'Disconnect',
+      widgetMenu: 'Options',
+      hideUntilVisit: 'Hide until next visit',
+      disableDomain: 'Disable on this domain',
+      disableAll: 'Disable on all pages',
     },
     fr: {
       collapse: 'Réduire',
@@ -219,6 +223,10 @@
       saveNotJob: 'Ça ne ressemble pas à une offre d’emploi',
       saveFailed: 'Impossible de sauvegarder cette page',
       disconnect: 'Se déconnecter',
+      widgetMenu: 'Options',
+      hideUntilVisit: 'Masquer jusqu’à la prochaine visite',
+      disableDomain: 'Désactiver sur ce domaine',
+      disableAll: 'Désactiver sur toutes les pages',
     },
     es: {
       collapse: 'Ocultar',
@@ -295,6 +303,10 @@
       saveNotJob: 'Esto no parece una oferta de empleo',
       saveFailed: 'No se pudo guardar esta página',
       disconnect: 'Cerrar sesión',
+      widgetMenu: 'Opciones',
+      hideUntilVisit: 'Ocultar hasta la próxima visita',
+      disableDomain: 'Desactivar en este dominio',
+      disableAll: 'Desactivar en todas las páginas',
     },
   }
 
@@ -317,16 +329,21 @@
     if (typeof b.command === 'function') { try { b.command(name, arg) } catch (e) { /* noop */ } return }
     if (typeof b[name] === 'function') { try { b[name](arg) } catch (e) { /* noop */ } }
   }
+  var busOffs = []  // unsubscribe fns so a teardown does not leak duplicate handlers
   function bindBus(handlers) {
     var tries = 0
     ;(function tryBind() {
       var b = bus()
       if (b && typeof b.on === 'function') {
-        Object.keys(handlers).forEach(function (evt) { b.on(evt, handlers[evt]) })
+        Object.keys(handlers).forEach(function (evt) { busOffs.push(b.on(evt, handlers[evt])) })
         return
       }
       if (tries++ < 40) setTimeout(tryBind, 50) // ~2s max
     })()
+  }
+  function unbindBus() {
+    for (var i = 0; i < busOffs.length; i++) { try { busOffs[i]() } catch (e) { /* noop */ } }
+    busOffs = []
   }
 
   // ---- styles (ported from the validated prototype; :root -> :host) ----------
@@ -364,13 +381,31 @@
     'font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased;',
     'transition:transform .28s cubic-bezier(.4,0,.2,1);z-index:2147483000;}',
     '.sb.collapsed{transform:translateX(384px);}',
-    '.tab{position:fixed;top:50%;right:0;transform:translateY(-50%);background:var(--surface);',
-    'border:1px solid var(--border);border-right:none;border-radius:12px 0 0 12px;box-shadow:var(--shadow);',
-    'padding:12px 8px;cursor:pointer;display:none;flex-direction:column;align-items:center;gap:8px;z-index:2147483000;',
-    'writing-mode:vertical-rl;font-weight:800;font-size:12px;letter-spacing:.06em;color:var(--ink);}',
-    '.sb.collapsed ~ .tab{display:flex;}',
-    '.tab .dot{writing-mode:horizontal-tb;width:22px;height:22px;border-radius:7px;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:11px;}',
-    '.tab .tab-logo{writing-mode:horizontal-tb;width:22px;height:22px;border-radius:7px;display:block;object-fit:cover;}',
+    // Floating, draggable launcher shown when the panel is collapsed.
+    '.widget{position:fixed;right:16px;bottom:80px;z-index:2147483000;display:none;align-items:center;gap:2px;',
+    'background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);',
+    'padding:5px;cursor:pointer;user-select:none;-webkit-user-select:none;transition:box-shadow .15s,transform .1s;}',
+    '.sb.collapsed ~ .widget{display:inline-flex;}',
+    '.widget.jsw-hidden{display:none !important;}',
+    '.widget.dragging{transition:none;cursor:grabbing;}',
+    '.widget:hover{box-shadow:0 12px 34px rgba(15,23,42,.20),0 0 0 1px rgba(15,23,42,.05);}',
+    '.w-logo{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;pointer-events:none;}',
+    '.w-logo img{width:26px;height:26px;display:block;}',
+    '.w-logo .dot{width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:800;}',
+    '.w-grip{width:0;opacity:0;overflow:hidden;display:grid;grid-template-columns:repeat(2,4px);grid-auto-rows:4px;gap:3px;',
+    'align-content:center;justify-content:center;flex:none;transition:width .15s ease,opacity .12s ease,margin .15s ease;cursor:grab;}',
+    '.widget:hover .w-grip{width:15px;opacity:1;margin-right:3px;}',
+    '.w-grip span{width:4px;height:4px;border-radius:50%;background:var(--faint);}',
+    '.w-close{position:absolute;top:-7px;left:-7px;width:19px;height:19px;border-radius:50%;background:var(--muted);color:#fff;',
+    'border:2px solid var(--surface);display:none;place-items:center;cursor:pointer;padding:0;}',
+    '.widget:hover .w-close{display:grid;}',
+    '.w-close svg{width:9px;height:9px;}',
+    '.w-menu{position:fixed;z-index:2147483001;display:none;flex-direction:column;min-width:210px;',
+    'background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:5px;}',
+    '.w-menu.open{display:flex;}',
+    '.w-menu button{text-align:left;border:none;background:none;font-family:inherit;font-size:13px;font-weight:600;color:var(--ink);',
+    'padding:10px 11px;border-radius:8px;cursor:pointer;white-space:nowrap;}',
+    '.w-menu button:hover{background:var(--surface-2);}',
     '.sb-head{display:flex;align-items:center;gap:9px;padding:13px 14px;border-bottom:1px solid var(--border);}',
     '.brand-logo{width:20px;height:20px;border-radius:6px;flex-shrink:0;display:block;object-fit:cover;}',
     '.wordmark{font-weight:800;font-size:15px;letter-spacing:-.01em;color:var(--ink);}',
@@ -508,6 +543,7 @@
     check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l4 4L20 5"/></svg>',
     plus: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
     spark: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17z"/></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     navApply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l4 4L20 5"/></svg>',
     navCv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/></svg>',
     navActivity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>',
@@ -528,7 +564,7 @@
     var T = t()
     var logo = logoUrl()
     var headLogo = logo ? '<img class="brand-logo" src="' + esc(logo) + '" alt="" width="20" height="20">' : ''
-    var tabLogo = logo ? '<img class="tab-logo" src="' + esc(logo) + '" alt="" width="22" height="22">' : '<span class="dot">JS</span>'
+    var widgetLogo = logo ? '<img src="' + esc(logo) + '" alt="" width="26" height="26">' : '<span class="dot">JS</span>'
     return (
       '<style>' + CSS + '</style>' +
       '<aside class="sb" id="sb" aria-label="' + esc(T.panelLabel) + '">' +
@@ -614,7 +650,16 @@
           '<button data-view="plan">' + IC.navPlan + esc(T.nav.plan) + '</button>' +
         '</nav>' +
       '</aside>' +
-      '<div class="tab" id="tab">' + tabLogo + 'JobSwiper</div>'
+      '<div class="widget" id="widget">' +
+        '<button class="w-close" id="wClose" title="' + esc(T.widgetMenu) + '" aria-label="' + esc(T.widgetMenu) + '">' + IC.close + '</button>' +
+        '<div class="w-logo">' + widgetLogo + '</div>' +
+        '<div class="w-grip" id="wGrip" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>' +
+      '</div>' +
+      '<div class="w-menu" id="wMenu">' +
+        '<button data-act="hide">' + esc(T.hideUntilVisit) + '</button>' +
+        '<button data-act="domain">' + esc(T.disableDomain) + '</button>' +
+        '<button data-act="all">' + esc(T.disableAll) + '</button>' +
+      '</div>'
     )
   }
 
@@ -632,6 +677,13 @@
   var lastSkipped = 0
   var lastSkippedList = []  // the last detection skipped array, so readback fails append to it
   var fillWatchdog = null   // fires if a started fill never reports progress/done
+  // ---- floating widget (collapsed launcher) + disable state -----------------
+  var widgetEl = null, wMenuEl = null
+  var dragState = null, dragDocWired = false
+  var HOST = (typeof location !== 'undefined' && location.hostname || '').toLowerCase()
+  var disabledAll = false          // "disable on all pages" (persisted)
+  var disabledDomains = {}         // { hostname: true } "disable on this domain" (persisted)
+  var widgetPos = null             // { left, top } persisted drag position
   var currentState = 'detecting' // mirrors the .is-<state> on #view-apply
   // Once the user starts a fill, lock the apply view so the post-fill re-detect
   // (which now sees 0 fillable inputs, because they are filled) cannot downgrade
@@ -702,6 +754,16 @@
     setTextById('profileLabel', T.profileUsed)
     setTextById('editProfileBtn', T.editProfile)
     setTextById('disconnectBtn', T.disconnect)
+    var wcl = $('wClose'); if (wcl) { wcl.setAttribute('title', T.widgetMenu); wcl.setAttribute('aria-label', T.widgetMenu) }
+    var wm = $('wMenu')
+    if (wm) {
+      var wlabels = { hide: T.hideUntilVisit, domain: T.disableDomain, all: T.disableAll }
+      var wbtns = wm.querySelectorAll('button')
+      for (var wi = 0; wi < wbtns.length; wi++) {
+        var wa = wbtns[wi].getAttribute('data-act')
+        if (wlabels[wa]) wbtns[wi].textContent = wlabels[wa]
+      }
+    }
     setTextById('planLabel', T.yourPlan)
     setTextById('planTag', T.planTitle)
     setTextById('planTitleEl', T.planTitle)
@@ -1368,6 +1430,125 @@
     storageSet({ sidebarCollapsed: false })
   }
 
+  // ---- floating widget: disable state, drag, and the close menu -------------
+  function loadDisableState(cb) {
+    storageGet(['jsw_disabled_all', 'jsw_disabled_domains', 'jsw_widget_pos'], function (o) {
+      o = o || {}
+      disabledAll = !!o.jsw_disabled_all
+      disabledDomains = o.jsw_disabled_domains || {}
+      widgetPos = o.jsw_widget_pos || null
+      cb()
+    })
+  }
+  function isDisabledHere() { return disabledAll || !!disabledDomains[HOST] }
+
+  function applyWidgetPos() {
+    if (!widgetEl || !widgetPos) return
+    // Clamp to the current viewport in case the window shrank since it was saved.
+    var left = Math.max(4, Math.min(widgetPos.left, (window.innerWidth || 800) - 60))
+    var top = Math.max(4, Math.min(widgetPos.top, (window.innerHeight || 600) - 60))
+    widgetEl.style.left = left + 'px'
+    widgetEl.style.top = top + 'px'
+    widgetEl.style.right = 'auto'
+    widgetEl.style.bottom = 'auto'
+  }
+
+  // Wire the launcher: drag to move (persisted), a plain click opens the panel,
+  // and the corner X opens the disable menu.
+  function setupWidget() {
+    widgetEl = $('widget'); wMenuEl = $('wMenu')
+    if (!widgetEl) return
+    applyWidgetPos()
+
+    widgetEl.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return
+      if (e.target && e.target.closest && e.target.closest('.w-close')) return
+      var r = widgetEl.getBoundingClientRect()
+      dragState = { sx: e.clientX, sy: e.clientY, ox: e.clientX - r.left, oy: e.clientY - r.top, moved: false }
+      e.preventDefault()
+    })
+
+    // Document move/up wired ONCE; they read the current widget from module vars.
+    if (!dragDocWired) {
+      dragDocWired = true
+      document.addEventListener('mousemove', function (e) {
+        if (!dragState || !widgetEl) return
+        if (!dragState.moved && Math.abs(e.clientX - dragState.sx) + Math.abs(e.clientY - dragState.sy) < 5) return
+        dragState.moved = true
+        widgetEl.classList.add('dragging')
+        var vw = window.innerWidth, vh = window.innerHeight
+        var w = widgetEl.offsetWidth, h = widgetEl.offsetHeight
+        var left = Math.max(4, Math.min(e.clientX - dragState.ox, vw - w - 4))
+        var top = Math.max(4, Math.min(e.clientY - dragState.oy, vh - h - 4))
+        widgetEl.style.left = left + 'px'; widgetEl.style.top = top + 'px'
+        widgetEl.style.right = 'auto'; widgetEl.style.bottom = 'auto'
+      }, true)
+      document.addEventListener('mouseup', function () {
+        if (!dragState) return
+        var wasDrag = dragState.moved
+        dragState = null
+        if (widgetEl) widgetEl.classList.remove('dragging')
+        if (wasDrag && widgetEl) {
+          var r = widgetEl.getBoundingClientRect()
+          widgetPos = { left: Math.round(r.left), top: Math.round(r.top) }
+          storageSet({ jsw_widget_pos: widgetPos })
+        } else if (!wasDrag) {
+          closeWidgetMenu(); userExpand()
+        }
+      }, true)
+    }
+
+    var wc = $('wClose')
+    if (wc) wc.addEventListener('click', function (e) { e.stopPropagation(); toggleWidgetMenu() })
+    if (wMenuEl) wMenuEl.addEventListener('click', function (e) {
+      var b = e.target && e.target.closest ? e.target.closest('button[data-act]') : null
+      if (b) onMenuAction(b.getAttribute('data-act'))
+    })
+  }
+
+  function toggleWidgetMenu() {
+    if (!wMenuEl || !widgetEl) return
+    if (wMenuEl.classList.contains('open')) { closeWidgetMenu(); return }
+    var r = widgetEl.getBoundingClientRect()
+    wMenuEl.style.left = Math.max(8, r.left) + 'px'
+    wMenuEl.style.top = (r.bottom + 6) + 'px'
+    wMenuEl.classList.add('open')
+    setTimeout(function () {
+      if (!wMenuEl || !wMenuEl.classList.contains('open')) return
+      var mr = wMenuEl.getBoundingClientRect()
+      if (mr.bottom > window.innerHeight - 4) wMenuEl.style.top = Math.max(8, r.top - mr.height - 6) + 'px'
+      if (mr.right > window.innerWidth - 4) wMenuEl.style.left = Math.max(8, window.innerWidth - mr.width - 8) + 'px'
+      document.addEventListener('mousedown', outsideMenuClose, true)
+    }, 0)
+  }
+  function outsideMenuClose(e) {
+    var path = e.composedPath ? e.composedPath() : []
+    if (path.indexOf(wMenuEl) !== -1 || path.indexOf(widgetEl) !== -1) return
+    closeWidgetMenu()
+  }
+  function closeWidgetMenu() {
+    if (wMenuEl) wMenuEl.classList.remove('open')
+    document.removeEventListener('mousedown', outsideMenuClose, true)
+  }
+
+  // "hide" = this visit only (no persistence, back on next reload). "domain"/"all"
+  // persist so boot() skips the auto-mount next time. All three tear the UI down
+  // now; the toolbar icon still force-opens past any disable.
+  function onMenuAction(act) {
+    closeWidgetMenu()
+    if (act === 'domain') { disabledDomains[HOST] = true; storageSet({ jsw_disabled_domains: disabledDomains }) }
+    else if (act === 'all') { disabledAll = true; storageSet({ jsw_disabled_all: true }) }
+    teardownVisual()
+  }
+  function teardownVisual() {
+    closeWidgetMenu()
+    unbindBus() // drop this mount's bus subscriptions so a re-mount does not double them
+    var host = document.getElementById(HOST_ID)
+    if (host) host.remove()
+    // allow a fresh mount if re-opened from the toolbar icon
+    _mounted = false; root = null; sbEl = null; widgetEl = null; wMenuEl = null
+  }
+
   // ---- mount -----------------------------------------------------------------
   function mount() {
     if (document.getElementById(HOST_ID)) return
@@ -1394,7 +1575,7 @@
 
     // collapse / tab
     var cb = $('collapseBtn'); if (cb) cb.addEventListener('click', collapse)
-    var tab = $('tab'); if (tab) tab.addEventListener('click', userExpand)
+    setupWidget()
 
     // apply commands
     var fillBtn = $('fillBtn'); if (fillBtn) fillBtn.addEventListener('click', function () {
@@ -1510,6 +1691,7 @@
 
   function maybeMount() {
     if (_mounted) return
+    if (isDisabledHere()) return // a disable set after lazy-arming still wins
     if (!isLikelyJob()) return
     doMount()
   }
@@ -1567,10 +1749,19 @@
   } catch (e) { /* noop */ }
 
   function boot() {
-    // The gate reads the DOM; give apply-shared a beat to initialize the bus and
-    // let document_idle settle, matching autofill/cv-attach boot timing.
-    if (isLikelyJob()) { doMount(); return }
-    armLazyMount()
+    // Load the disable state first: if this domain (or all pages) was disabled via
+    // the widget menu, stay fully inert on load. The toolbar icon still force-opens.
+    loadDisableState(function () {
+      if (isDisabledHere()) return
+      // The gate reads the DOM; give apply-shared a beat to initialize the bus and
+      // let document_idle settle, matching autofill/cv-attach boot timing. The
+      // floating launcher shows on any relevant site (job board / ATS / apply), not
+      // only a live apply form.
+      var b = bus()
+      var relevant = !!(b && typeof b.isRelevantSite === 'function' && b.isRelevantSite())
+      if (relevant || isLikelyJob()) { doMount(); return }
+      armLazyMount()
+    })
   }
 
   if (document.readyState === 'loading') {
