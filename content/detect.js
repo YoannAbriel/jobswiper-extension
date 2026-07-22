@@ -9,6 +9,23 @@ document.documentElement.appendChild(el)
 // can be silently filtered elsewhere, and is unnecessarily permissive.
 const ALLOWED_ORIGIN = window.location.origin
 
+// The extension context is invalidated when the extension is reloaded or updated
+// while this page stays open; any chrome.* call from the now-orphaned content
+// script then throws "Extension context invalidated". Guard every chrome call so
+// an orphaned instance fails silently (a page refresh re-injects a fresh script).
+function extAlive() {
+  try { return !!(chrome.runtime && chrome.runtime.id) } catch (e) { return false }
+}
+function safeSend(message, cb) {
+  if (!extAlive()) { if (cb) cb(null); return }
+  try {
+    chrome.runtime.sendMessage(message, (resp) => {
+      void chrome.runtime.lastError
+      if (cb) cb(resp)
+    })
+  } catch (e) { if (cb) cb(null) }
+}
+
 window.addEventListener('message', (event) => {
   if (event.origin !== ALLOWED_ORIGIN) return
   if (event.source !== window) return
@@ -31,15 +48,14 @@ window.addEventListener('message', (event) => {
       // fresh independent refresh_token is still present), causing a fresh mint
       // on every page load. pullIndependentSession keeps the existing session
       // when still valid and mints only when needed.
-      chrome.runtime.sendMessage({ type: 'PULL_SESSION' }, () => {
-        void chrome.runtime.lastError
+      safeSend({ type: 'PULL_SESSION' }, () => {
         window.postMessage({ type: 'JOBSWIPER_TOKEN_SAVED' }, ALLOWED_ORIGIN)
       })
       return
     }
     // Old app builds do not send the flag: store the shared refresh_token as
     // before (no regression for already-installed extensions on the old app).
-    chrome.runtime.sendMessage(
+    safeSend(
       {
         type: 'STORE_AUTH',
         token: event.data.token,
@@ -47,7 +63,6 @@ window.addEventListener('message', (event) => {
         expires_at: event.data.expires_at ?? null,
       },
       () => {
-        void chrome.runtime.lastError
         window.postMessage({ type: 'JOBSWIPER_TOKEN_SAVED' }, ALLOWED_ORIGIN)
       },
     )
@@ -56,21 +71,26 @@ window.addEventListener('message', (event) => {
   // Logout from web: clear all extension auth state. Sent on
   // supabase.auth SIGNED_OUT and on explicit account deletion.
   if (event.data?.type === 'JOBSWIPER_LOGOUT') {
-    chrome.runtime.sendMessage({ type: 'LOGOUT' }, () => void chrome.runtime.lastError)
+    safeSend({ type: 'LOGOUT' })
   }
 
   // Profile data sync: app sends profile for autofill (also via SW)
   if (event.data?.type === 'JOBSWIPER_SET_PROFILE' && event.data.profile) {
-    chrome.runtime.sendMessage(
-      { type: 'STORE_PROFILE', profile: event.data.profile },
-      () => void chrome.runtime.lastError,
-    )
+    safeSend({ type: 'STORE_PROFILE', profile: event.data.profile })
   }
 
   // Auth token request: app asks extension for current token
   if (event.data?.type === 'JOBSWIPER_GET_TOKEN') {
-    chrome.storage.local.get('token', ({ token }) => {
-      window.postMessage({ type: 'JOBSWIPER_TOKEN_RESULT', token: token || null }, ALLOWED_ORIGIN)
-    })
+    if (!extAlive()) {
+      window.postMessage({ type: 'JOBSWIPER_TOKEN_RESULT', token: null }, ALLOWED_ORIGIN)
+      return
+    }
+    try {
+      chrome.storage.local.get('token', ({ token }) => {
+        window.postMessage({ type: 'JOBSWIPER_TOKEN_RESULT', token: token || null }, ALLOWED_ORIGIN)
+      })
+    } catch (e) {
+      window.postMessage({ type: 'JOBSWIPER_TOKEN_RESULT', token: null }, ALLOWED_ORIGIN)
+    }
   }
 })
