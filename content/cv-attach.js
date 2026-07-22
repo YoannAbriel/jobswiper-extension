@@ -743,14 +743,29 @@
       observer.observe(document.body, { childList: true, subtree: true })
     }
 
+    var navHooked = false
     function hookHistory() {
+      if (navHooked) return
+      navHooked = true
       var origPush = history.pushState
       history.pushState = function () {
         var ret = origPush.apply(this, arguments)
-        scheduleScan()
+        onNav()
         return ret
       }
-      window.addEventListener('popstate', scheduleScan)
+      window.addEventListener('popstate', onNav)
+    }
+
+    function onNav() {
+      if (observer) { scheduleScan(); return }
+      armIfLikely()
+    }
+
+    function armIfLikely() {
+      var apply = window.__jobswiperApply
+      if (apply && apply.isLikelyJobApplication && !apply.isLikelyJobApplication()) return
+      injectTrigger()
+      startObserver()
     }
 
     window.addEventListener('pagehide', function () {
@@ -758,10 +773,12 @@
       if (debounceTimer) clearTimeout(debounceTimer)
     })
 
+    // Broad injection: always hook the cheap SPA-nav listener, but only arm the
+    // observer once the page looks like a job application. attachCv stays
+    // registered on window.__jobswiperApply regardless (the sidebar drives it).
     function boot() {
-      injectTrigger()
-      startObserver()
       hookHistory()
+      armIfLikely()
     }
 
     if (document.readyState === 'loading') {

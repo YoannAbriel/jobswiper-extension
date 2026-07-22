@@ -884,6 +884,9 @@
 
     function runDetect() {
       var apply = window.__jobswiperApply
+      // Broad injection gate: on a non-job page this is the cheap early-out that
+      // keeps the whole detect path (root resolution, ctx fetch, emits) dark.
+      if (apply && apply.isLikelyJobApplication && !apply.isLikelyJobApplication()) return
       var root = apply ? apply.resolveFormRoot() : null
       if (!root) { emitEmpty(); return }
       if (detectInFlight) return
@@ -1017,15 +1020,34 @@
     }
 
     // SPA route changes (Workday/Greenhouse) do not reload the page; hook history
-    // so detection re-evaluates on navigation.
+    // so detection re-evaluates on navigation. Hooking history is cheap (no
+    // observer, no timer) so it is safe to arm even on a non-job page: it is how
+    // a broad-injected SPA that later routes INTO an application gets picked up.
+    var navHooked = false
     function hookHistory() {
+      if (navHooked) return
+      navHooked = true
       var origPush = history.pushState
       history.pushState = function () {
         var ret = origPush.apply(this, arguments)
-        scheduleScan()
+        onNav()
         return ret
       }
-      window.addEventListener('popstate', scheduleScan)
+      window.addEventListener('popstate', onNav)
+    }
+
+    // On navigation: if the apply layer is already armed just re-scan; otherwise
+    // re-evaluate the gate and arm it only if the new URL/DOM is an application.
+    function onNav() {
+      if (observer) { scheduleScan(); return }
+      armIfLikely()
+    }
+
+    function armIfLikely() {
+      var apply = window.__jobswiperApply
+      if (apply && apply.isLikelyJobApplication && !apply.isLikelyJobApplication()) return
+      runDetect()
+      startObserver()
     }
 
     window.addEventListener('pagehide', function () {
@@ -1034,10 +1056,12 @@
       if (fillTimer) { clearTimeout(fillTimer); fillTimer = null }
     })
 
+    // boot(): always hook history (cheap SPA-nav listener), but only arm the
+    // MutationObserver + run the detect loop when this actually looks like a job
+    // application. On a plain page nothing observes, fetches, or times.
     function boot() {
-      runDetect()
-      startObserver()
       hookHistory()
+      armIfLikely()
     }
 
     if (document.readyState === 'loading') {

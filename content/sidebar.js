@@ -1076,21 +1076,95 @@
 
   function collapseSilent() { if (sbEl) sbEl.classList.add('collapsed') }
 
-  // Boot: resolve the user's app locale (from their cached profile in the SW)
+  // Mount: resolve the user's app locale (from their cached profile in the SW)
   // BEFORE building the shell, so the chrome renders in the user's language, not
-  // the ATS page's <html lang>. Never block more than 500ms on it.
-  function boot() {
-    var mounted = false
-    function go() { if (mounted) return; mounted = true; mount() }
-    var timer = setTimeout(go, 500)
+  // the ATS page's <html lang>. Never block more than 500ms on it. Runs at most
+  // once; safe to call from any lazy-mount trigger.
+  var _mounted = false
+  function doMount() {
+    if (_mounted) return
+    _mounted = true
+    clearLazyTriggers()
+    var built = false
+    function build() {
+      if (built) return
+      built = true
+      mount()
+      // The apply layer may have already reached a terminal state (autofill
+      // detected + emitted 'ready'/'error' before we mounted). Bus emits are not
+      // replayed on subscribe, so pull the last state explicitly.
+      replayBusState()
+    }
+    var timer = setTimeout(build, 500)
     send({ type: 'GET_PROFILE' }, function (resp) {
       if (resp && resp.locale) lang = pickLang(resp.locale)
       clearTimeout(timer)
-      go()
+      build()
       // If the 500ms timer mounted the shell in the fallback lang before this
       // resolved, re-apply every static string in the resolved language.
       relocalize()
     })
+  }
+
+  function replayBusState() {
+    var b = bus()
+    if (!b || typeof b.last !== 'function') return
+    var ready = b.last('ready')
+    if (ready) { try { onReady(ready) } catch (e) {} return }
+    var err = b.last('error')
+    if (err) { try { onError(err) } catch (e) {} }
+  }
+
+  // ---- gated lazy mount ------------------------------------------------------
+  // Broad injection means this script loads on every page. It must render
+  // NOTHING until the page looks like a job application. On a plain page it does
+  // a cheap gate check and returns; it then only reacts to SPA navigation and to
+  // the apply bus (which autofill drives, and only when it too judges the page a
+  // job application). No host/shadow is created until the gate passes.
+  function isLikelyJob() {
+    var b = bus()
+    return !!(b && typeof b.isLikelyJobApplication === 'function' && b.isLikelyJobApplication())
+  }
+
+  function maybeMount() {
+    if (_mounted) return
+    if (!isLikelyJob()) return
+    doMount()
+  }
+
+  var lazyOffs = []
+  function clearLazyTriggers() {
+    for (var i = 0; i < lazyOffs.length; i++) { try { lazyOffs[i]() } catch (e) {} }
+    lazyOffs = []
+    window.removeEventListener('popstate', maybeMount)
+  }
+
+  function armLazyMount() {
+    var b = bus()
+    if (b && typeof b.on === 'function') {
+      // autofill emits these ONLY when it considers the page an application, so
+      // any of them is a valid trigger to mount lazily.
+      lazyOffs.push(b.on('detecting', maybeMount))
+      lazyOffs.push(b.on('ready', maybeMount))
+      lazyOffs.push(b.on('error', maybeMount))
+      lazyOffs.push(b.on('empty', maybeMount))
+    }
+    // SPA navigation into an application (URL change) re-checks the gate. Cheap
+    // event listeners, never an observer, so a non-job page stays inert.
+    var origPush = history.pushState
+    history.pushState = function () {
+      var ret = origPush.apply(this, arguments)
+      maybeMount()
+      return ret
+    }
+    window.addEventListener('popstate', maybeMount)
+  }
+
+  function boot() {
+    // The gate reads the DOM; give apply-shared a beat to initialize the bus and
+    // let document_idle settle, matching autofill/cv-attach boot timing.
+    if (isLikelyJob()) { doMount(); return }
+    armLazyMount()
   }
 
   if (document.readyState === 'loading') {

@@ -222,6 +222,231 @@
     return true
   }
 
+  // ---- is-this-a-job-application gate --------------------------------------
+  // Because the apply layer now injects broadly (manifest matches https://*/*),
+  // EVERY page runs this cheap gate before anything renders or observes. It is
+  // structured for early exits: a known-ATS host short-circuits to true with no
+  // DOM work; an obviously-non-job surface (search engines, webmail, social, AI
+  // chat, dev tools) short-circuits to false with no DOM work; only an
+  // unclassified page pays for a bounded DOM scan. Everything is read-only.
+
+  // Known ATS host substrings. A match here is a hard YES (the page is an
+  // application surface by construction), bypassing every heuristic. Substrings,
+  // matched against location.hostname (competitor uses the same bare-substring
+  // approach). smartapply.indeed.com is included so the broad match folds in the
+  // old dedicated Indeed apply block.
+  var KNOWN_ATS_HOSTS = [
+    'greenhouse.io',
+    'lever.co',
+    'smartrecruiters.com',
+    'ashbyhq.com',
+    'recruitee.com',
+    'myworkdayjobs.com',
+    'successfactors.com',
+    'successfactors.eu',
+    'sapsf.com',
+    'sapsf.eu',
+    'oraclecloud.com',
+    'workforcenow.adp.com',
+    'myjobs.adp.com',
+    'csod.com',
+    'avature.net',
+    'eightfold.ai',
+    'jobvite.com',
+    'ultipro.com',
+    'amazon.jobs',
+    'icims.com',
+    'workable.com',
+    'breezy.hr',
+    'bamboohr.com',
+    'jazz.co',
+    'applytojob.com',
+    'smartapply.indeed.com',
+  ]
+
+  // Hard-NO host substrings: pages that are never a job application. Checked
+  // BEFORE any DOM work so the gate stays cheap on the sites people keep open.
+  var HOST_BLOCKLIST = [
+    'mail.google.com', 'docs.google.com', 'calendar.google.com', 'drive.google.com', 'meet.google.com',
+    'chatgpt.com', 'chat.openai.com', 'claude.ai', 'gemini.google.com', 'perplexity.ai', 'poe.com',
+    'github.com', 'gitlab.com', 'bitbucket.org', 'stackoverflow.com', 'figma.com', 'notion.so',
+    'trello.com', 'atlassian.net', 'slack.com', 'discord.com',
+    'youtube.com', 'reddit.com', 'twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'tiktok.com',
+    'pinterest.com', 'whatsapp.com', 'telegram.org', 'twitch.tv',
+    'wikipedia.org', 'medium.com', 'substack.com', 'netflix.com', 'spotify.com',
+  ]
+
+  function matchesKnownAts(host) {
+    host = (host || '').toLowerCase()
+    for (var i = 0; i < KNOWN_ATS_HOSTS.length; i++) {
+      if (host.indexOf(KNOWN_ATS_HOSTS[i]) !== -1) return true
+    }
+    return false
+  }
+
+  // Non-job surfaces that share a host with legitimate targets and so need a
+  // path check: search-engine result pages, and LinkedIn everywhere except
+  // /jobs. Returns true when the URL is a hard-NO surface.
+  function isBlockedSurface(host, path) {
+    host = (host || '').toLowerCase()
+    path = (path || '').toLowerCase()
+    for (var i = 0; i < HOST_BLOCKLIST.length; i++) {
+      if (host.indexOf(HOST_BLOCKLIST[i]) !== -1) return true
+    }
+    // Search-engine RESULT pages only (their /search path), not the whole host.
+    if (host.indexOf('google.') !== -1 && path.indexOf('/search') === 0) return true
+    if (host.indexOf('bing.com') !== -1 && path.indexOf('/search') === 0) return true
+    if (host.indexOf('duckduckgo.com') !== -1) return true
+    if (host.indexOf('search.brave.com') !== -1) return true
+    if (host.indexOf('search.yahoo.com') !== -1) return true
+    if (host.indexOf('ecosia.org') !== -1) return true
+    if (host.indexOf('qwant.com') !== -1) return true
+    // LinkedIn: only /jobs surfaces are application-relevant (the linkedin.js
+    // capture script owns the rest). Everything else on linkedin is a hard NO.
+    if (host.indexOf('linkedin.com') !== -1 &&
+        path.indexOf('/jobs') !== 0 && path.indexOf('/comm/jobs') !== 0) return true
+    return false
+  }
+
+  // Text signals. Kept multilingual (EN/FR/ES/DE) but small.
+  var APPLY_INTENT_RE = /(submit application|apply now|apply for|easy apply|start your application|complete application|postuler|candidature|d[ée]poser ma candidature|solicitar empleo|enviar solicitud|inscribirse|aplicar ahora|jetzt bewerben|bewerbung|bewerben)/i
+  var RESUME_CTX_RE = /(resume|r[ée]sum[ée]|\bcv\b|curriculum|cover letter|lettre de motivation|lebenslauf|hoja de vida)/i
+  var IDENTITY_RE = /(first[\s_-]?name|last[\s_-]?name|full[\s_-]?name|\bname\b|e-?mail|phone|mobile|t[ée]l[ée]phone|pr[ée]nom|\bnom\b|correo|tel[ée]fono|nombre|apellido|vorname|nachname)/i
+
+  // A resume/CV file input, judged by its own attributes and a bounded slice of
+  // nearby text. Strong single signal of an application surface.
+  function looksLikeResumeFileInput() {
+    var files = document.querySelectorAll('input[type="file"]')
+    var cap = files.length < 12 ? files.length : 12
+    for (var i = 0; i < cap; i++) {
+      var f = files[i]
+      if (!isElementVisible(f)) continue
+      var blob = (
+        (f.getAttribute('accept') || '') + ' ' +
+        (f.getAttribute('name') || '') + ' ' +
+        (f.id || '') + ' ' +
+        (f.getAttribute('aria-label') || '')
+      ).toLowerCase()
+      if (RESUME_CTX_RE.test(blob)) return true
+      var anc = f
+      for (var d = 0; d < 4 && anc; d++) {
+        anc = anc.parentElement
+        if (anc) {
+          var txt = anc.textContent || ''
+          if (txt.length < 400 && RESUME_CTX_RE.test(txt)) return true
+        }
+      }
+    }
+    return false
+  }
+
+  // Apply-intent text on a bounded set of action-ish elements.
+  function hasApplyIntentText() {
+    var els = document.querySelectorAll(
+      'button, input[type="submit"], input[type="button"], a[role="button"], [class*="apply" i], h1, h2'
+    )
+    var cap = els.length < 60 ? els.length : 60
+    for (var i = 0; i < cap; i++) {
+      var e = els[i]
+      var s = e.value || e.textContent || e.getAttribute('aria-label') || ''
+      if (s && s.length < 140 && APPLY_INTENT_RE.test(s)) return true
+    }
+    return false
+  }
+
+  // Count identity-labelled visible fields inside a scope, and note whether a
+  // password field is present (so a login form is not mistaken for an apply
+  // form). Bounded scan.
+  function identitySignal(scope) {
+    var root = scope || document
+    var inputs = root.querySelectorAll('input, textarea')
+    var cap = inputs.length < 80 ? inputs.length : 80
+    var count = 0
+    var sawPassword = false
+    for (var i = 0; i < cap; i++) {
+      var f = inputs[i]
+      if (f.tagName === 'INPUT') {
+        var ty = (f.getAttribute('type') || 'text').toLowerCase()
+        if (ty === 'password') { sawPassword = true; continue }
+        if (BLOCKED_TYPES.indexOf(ty) !== -1) continue
+      }
+      if (!isElementVisible(f)) continue
+      var blob = (
+        (f.getAttribute('name') || '') + ' ' +
+        (f.id || '') + ' ' +
+        (f.getAttribute('placeholder') || '') + ' ' +
+        (f.getAttribute('aria-label') || '') + ' ' +
+        (f.getAttribute('autocomplete') || '')
+      ).toLowerCase()
+      if (IDENTITY_RE.test(blob)) count++
+    }
+    return { count: count, sawPassword: sawPassword }
+  }
+
+  // Raw (uncached) decision. Order is chosen so the common cases are cheapest:
+  //   known ATS host  -> YES, no DOM
+  //   blocked surface -> NO, no DOM
+  //   resume file input present in a form context -> YES
+  //   apply-intent text + >=2 identity fields in a form root -> YES
+  //   otherwise -> NO
+  function computeIsLikelyJobApplication() {
+    try {
+      var host = (location.hostname || '').toLowerCase()
+      var path = (location.pathname || '').toLowerCase()
+      if (matchesKnownAts(host)) return true
+      if (isBlockedSurface(host, path)) return false
+
+      var root = resolveFormRoot()
+
+      // Strong: a resume/CV upload, as long as it sits in some form-ish context
+      // (a resolvable root or explicit apply-intent), never a lone media widget.
+      if (looksLikeResumeFileInput()) {
+        return !!root || hasApplyIntentText()
+      }
+
+      // Otherwise require BOTH an application form root AND apply-intent text AND
+      // at least two identity fields. This is what keeps login/search/newsletter
+      // pages out: a lone email (+ password) never clears the bar.
+      if (!root) return false
+      var idf = identitySignal(root)
+      if (idf.sawPassword && idf.count < 3) return false
+      if (idf.count >= 2 && hasApplyIntentText()) return true
+      return false
+    } catch (e) {
+      return false
+    }
+  }
+
+  // Cached wrapper (the one the gating points call, so the broad injection stays
+  // cheap when the same page pings the gate repeatedly). The cache key is the
+  // current URL, so an SPA navigation naturally invalidates it. A positive is
+  // sticky for the URL (once an application, always an application for that URL);
+  // a negative is memoised only briefly so a late-rendering form is re-evaluated
+  // on the next call instead of being locked out.
+  var _likelyHref = null
+  var _likelyVal = false
+  var _likelyTrue = false
+  var _likelyAt = 0
+  var NEG_TTL_MS = 1500
+
+  function isLikelyJobApplication(opts) {
+    var href = (typeof location !== 'undefined' && location.href) || ''
+    var now = (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0
+    if (opts && opts.fresh) { _likelyHref = null }
+    if (_likelyHref === href) {
+      if (_likelyTrue) return true
+      if (now - _likelyAt < NEG_TTL_MS) return _likelyVal
+    } else {
+      _likelyTrue = false
+    }
+    var val = computeIsLikelyJobApplication()
+    _likelyHref = href
+    _likelyVal = val
+    _likelyAt = now
+    if (val) _likelyTrue = true
+    return val
+  }
+
   // ---- event bus -----------------------------------------------------------
   // A dependency-free pub/sub so the three apply content scripts (autofill.js,
   // cv-attach.js) and the sidebar can talk over this SAME window.__jobswiperApply
@@ -268,6 +493,10 @@
     resolveFormRoot: resolveFormRoot,
     isFillableInput: isFillableInput,
     SENSITIVE_DENYLIST: SENSITIVE_DENYLIST,
+    // Cheap cached gate the apply layer checks before rendering/observing.
+    isLikelyJobApplication: isLikelyJobApplication,
+    // Uncached raw decision (forces a fresh DOM scan).
+    isLikelyJobApplicationNow: computeIsLikelyJobApplication,
     on: on,
     off: off,
     emit: emit,
@@ -281,8 +510,12 @@
       SENSITIVE_DENYLIST: SENSITIVE_DENYLIST,
       REJECT_TOKENS: REJECT_TOKENS,
       BLOCKED_TYPES: BLOCKED_TYPES,
+      KNOWN_ATS_HOSTS: KNOWN_ATS_HOSTS,
+      HOST_BLOCKLIST: HOST_BLOCKLIST,
       isRejectedForm: isRejectedForm,
       applicationFieldCount: applicationFieldCount,
+      matchesKnownAts: matchesKnownAts,
+      isBlockedSurface: isBlockedSurface,
     }
   }
 })()
