@@ -261,6 +261,67 @@
       return inputs.filter(isSafeFileInput)
     }
 
+    // ---- resume-vs-other file-input disambiguation --------------------------
+    // A form can expose several uploaders (resume, cover letter, portfolio,
+    // references). The resume PDF must land in the RESUME slot and never in a
+    // cover-letter / portfolio field. We score each safe input by its labelling.
+    function cssEsc(id) {
+      if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(id)
+      return String(id).replace(/["\\\]\[]/g, '\\$&')
+    }
+
+    // Bounded labelling text around a file input (aria + <label> + legend + a few
+    // ancestors of short text), used only for classification.
+    function fileInputLabelText(el) {
+      var parts = []
+      var lb = el.getAttribute('aria-labelledby')
+      if (lb) lb.split(/\s+/).forEach(function (id) { var e = document.getElementById(id); if (e) parts.push(e.textContent || '') })
+      if (el.id) { var fl = document.querySelector('label[for="' + cssEsc(el.id) + '"]'); if (fl) parts.push(fl.textContent || '') }
+      var wrap = el.closest ? el.closest('label, [class*="field" i], [class*="upload" i], [class*="attach" i], fieldset') : null
+      if (wrap) { var lg = wrap.querySelector('label, legend'); if (lg) parts.push(lg.textContent || '') }
+      var anc = el.parentElement
+      for (var d = 0; d < 3 && anc; d++) { var txt = anc.textContent || ''; if (txt.length < 300) parts.push(txt); anc = anc.parentElement }
+      return parts.join(' ').slice(0, 500)
+    }
+
+    // Multilingual: cover-letter / portfolio / reference / photo slots score hard
+    // negative (never the resume PDF); a resume/cv slot scores positive; anything
+    // else stays neutral (0).
+    var RESUME_RE = /resume|r[ée]sum[ée]|\bcv\b|curriculum|lebenslauf|hoja de vida|curriculo|currículo/i
+    var NOT_RESUME_RE = /cover\s*letter|lettre de motivation|motivation|anschreiben|carta de presentaci|portfolio|reference letter|transcript|dipl[oô]me|diploma|\bphoto\b|passport|id card/i
+
+    function fileInputResumeScore(el) {
+      var blob = [
+        el.getAttribute('name') || '',
+        el.id || '',
+        el.getAttribute('aria-label') || '',
+        el.getAttribute('accept') || '',
+        fileInputLabelText(el),
+      ].join(' ')
+      if (NOT_RESUME_RE.test(blob)) return -100
+      if (RESUME_RE.test(blob)) return 100
+      return 0
+    }
+
+    // Decide where to attach the resume PDF given the safe inputs:
+    //   { target }                       attach here
+    //   { target:null, ambiguous:true }  multiple slots, no clear winner -> let the user pick
+    //   { target:null, blocked:true }    the only slot is clearly NOT a resume slot
+    //   { target:null }                  nothing safe to attach to
+    function chooseAttachTarget(safeInputs) {
+      if (!safeInputs || !safeInputs.length) return { target: null }
+      var scored = safeInputs.map(function (el) { return { el: el, s: fileInputResumeScore(el) } })
+      scored.sort(function (a, b) { return b.s - a.s })
+      var top = scored[0]
+      if (top.s > 0) {
+        if (scored.length > 1 && scored[1].s === top.s) return { target: null, ambiguous: true }
+        return { target: top.el }
+      }
+      if (top.s < 0) return { target: null, blocked: true }
+      if (safeInputs.length === 1) return { target: safeInputs[0] }
+      return { target: null, ambiguous: true }
+    }
+
     // ---- closed-shadow overlay ----------------------------------------------
     var PANEL_STYLE = [
       ':host { all: initial; }',
@@ -514,14 +575,17 @@
         attachBtn.addEventListener('click', function () {
           if (busy) return
           var safe = resolveSafeInputs()
-          var mode = selectMode(safe.length)
-          if (mode === 'pick') { enterPickMode(safe); return }
+          var choice = chooseAttachTarget(safe)
+          // Multiple plausible slots with no clear resume winner: let the user
+          // click the right field rather than guess.
+          if (!choice.target && choice.ambiguous && safe.length > 1) { enterPickMode(safe); return }
           setBusy(true)
           withPdf(setStatus, function (bytes, name) {
-            if (mode === 'attach') {
-              attachOrFallback(safe[0], bytes, name)
+            if (choice.target) {
+              attachOrFallback(choice.target, bytes, name)
             } else {
-              // No safe native input: honest download fallback.
+              // No safe native input, or the only slot is clearly not a resume
+              // field (cover letter, portfolio): honest download fallback.
               closePanel()
               triggerBlobDownload(bytes, name)
               showToast(tr.downloaded(name))
@@ -650,8 +714,9 @@
     // Command the sidebar calls: attach the selected CV into the resolved resume
     // field, emitting attach {status:"attaching"|"done"|"error", cvName} as it
     // goes. Runs headless (no closed-shadow panel) so the sidebar stays the only
-    // surface. Attach vs honest download fallback stays governed by the untouched
-    // attachOrFallback / selectMode logic.
+    // surface. Where to attach (resume slot vs honest download fallback) is
+    // governed by chooseAttachTarget; attachOrFallback still owns the actual
+    // native-input assignment + verify.
     function attachCv() {
       var tr = t(lang)
       var cvName = currentCvLabel()
@@ -663,20 +728,21 @@
         }
         cvName = currentCvLabel()
         var safe = resolveSafeInputs()
-        var mode = selectMode(safe.length)
+        var choice = chooseAttachTarget(safe)
         var attached = false
         var errored = false
         function statusShim(text, isErr) { if (isErr) errored = true }
         return withPdf(statusShim, function (bytes, name) {
           cvName = name || cvName
-          if (mode === 'download') {
-            // No safe native input: honest download fallback, same as the panel.
+          if (choice.target) {
+            // Attach to the best resume-matched field, not blindly the first.
+            attachOrFallback(choice.target, bytes, name)
+          } else {
+            // No safe input, an ambiguous multi-field form (the sidebar has no
+            // on-page click-to-pick step), or a non-resume-only slot: honest
+            // download fallback, same as the panel.
             triggerBlobDownload(bytes, name)
             showToast(tr.downloaded(name))
-          } else {
-            // mode 'attach' or 'pick': place into the first safe input. The
-            // sidebar drives selection, so there is no on-page click-to-pick step.
-            attachOrFallback(safe[0], bytes, name)
           }
           attached = true
         }).then(function () {

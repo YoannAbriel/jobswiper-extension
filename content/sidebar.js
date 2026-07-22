@@ -393,6 +393,8 @@
     '.attn-row .lock{color:var(--sunset);}',
     '.attn-row .why{margin-left:auto;font-size:10.5px;color:var(--faint);font-weight:700;}',
     '.attn-row.need .lock{color:var(--blue);}',
+    '.attn-row .jumpbtn{margin-left:8px;flex-shrink:0;border:1px solid var(--border-strong);background:var(--surface);color:var(--blue);font-family:inherit;font-weight:800;font-size:10.5px;padding:2px 8px;border-radius:6px;cursor:pointer;}',
+    '.attn-row .jumpbtn:hover{background:var(--blue-050);}',
     '.cta-row{display:flex;flex-direction:column;gap:8px;margin-top:14px;}',
     '.btn{border:none;border-radius:10px;font-family:inherit;font-weight:800;font-size:13px;padding:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:background .15s,border-color .15s;text-decoration:none;}',
     '.btn-primary{background:var(--blue);color:#fff;}',
@@ -877,15 +879,56 @@
     if (!attn || !rows) return
     if (!skipped.length) { attn.style.display = 'none'; rows.innerHTML = ''; return }
     attn.style.display = ''
-    var html = ''
+    rows.innerHTML = ''
     skipped.forEach(function (sk) {
       var required = sk.reason === 'required'
       var why = required ? T.reasonRequired : T.reasonSensitive
-      html += '<div class="attn-row' + (required ? ' need' : '') + '">' +
-        '<span class="lock">' + (required ? '◉' : '🔒') + '</span>' + esc(sk.label || '') +
-        '<span class="why">' + esc(why) + '</span></div>'
+      var row = document.createElement('div')
+      row.className = 'attn-row' + (required ? ' need' : '')
+      var lock = document.createElement('span')
+      lock.className = 'lock'; lock.textContent = required ? '◉' : '🔒'
+      row.appendChild(lock)
+      row.appendChild(document.createTextNode(sk.label || ''))
+      var whyEl = document.createElement('span')
+      whyEl.className = 'why'; whyEl.textContent = why
+      row.appendChild(whyEl)
+      // Jump affordance only for REQUIRED rows we hold a live input ref for.
+      // Sensitive fields deliberately get no jump: the sidebar declined to touch
+      // them for privacy, so it must not shortcut the user to them either.
+      if (required && sk.input && sk.input.nodeType === 1) {
+        var jump = document.createElement('button')
+        jump.className = 'jumpbtn'; jump.type = 'button'; jump.textContent = T.jump
+        ;(function (target) {
+          jump.addEventListener('click', function (e) { e.stopPropagation(); jumpToField(target) })
+        })(sk.input)
+        row.appendChild(jump)
+      }
+      rows.appendChild(row)
     })
-    rows.innerHTML = html
+  }
+
+  // Scroll the page to a skipped field and pulse it, so "REQUIRED" rows are not
+  // just a list but a shortcut. Styling the page node is fine (same document);
+  // wrapped in try/catch since the node may have been removed since detection.
+  var pulsingFields = (typeof WeakSet !== 'undefined') ? new WeakSet() : null
+  function jumpToField(input) {
+    try {
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (typeof input.focus === 'function') {
+        try { input.focus({ preventScroll: true }) } catch (e) { input.focus() }
+      }
+      // Skip re-pulsing while a pulse is in flight, otherwise a double-click would
+      // snapshot the already-blue outline and leave it stuck blue.
+      if (pulsingFields && pulsingFields.has(input)) return
+      if (pulsingFields) pulsingFields.add(input)
+      var po = input.style.outline, poff = input.style.outlineOffset
+      input.style.outline = '2px solid #0064be'
+      input.style.outlineOffset = '2px'
+      setTimeout(function () {
+        input.style.outline = po; input.style.outlineOffset = poff
+        if (pulsingFields) pulsingFields.delete(input)
+      }, 1600)
+    } catch (e) { /* node gone; nothing to jump to */ }
   }
 
   function seedFilledChips() {

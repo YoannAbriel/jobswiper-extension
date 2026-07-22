@@ -837,7 +837,9 @@
         var key = reason + '|' + normalize(label)
         if (seen[key]) continue
         seen[key] = true
-        out.push({ label: label, reason: reason })
+        // Carry the live input ref (same-window bus, never serialized) so the
+        // sidebar can offer a jump-to-field affordance on required fields.
+        out.push({ label: label, reason: reason, input: input })
       }
       return out
     }
@@ -968,7 +970,7 @@
       var unfilled = []
       for (var i = 0; i < fillPlan.length; i++) {
         if (readbackFailed(fillPlan[i])) {
-          unfilled.push({ label: fieldLabel(fillPlan[i].fieldKey, fillLang), reason: 'required' })
+          unfilled.push({ label: fieldLabel(fillPlan[i].fieldKey, fillLang), reason: 'required', input: fillPlan[i].input })
         } else { ok++ }
       }
       var skippedCount = (fillSkipped ? fillSkipped.length : 0) + unfilled.length
@@ -989,7 +991,10 @@
       try {
         fillInput(item.input, item.value)
       } catch (e) {
-        busEmit('error', { message: String((e && e.message) || e) })
+        // A single field throwing must not flash the full error card mid-fill.
+        // finalizeFill re-reads every field and routes any that did not land into
+        // the needs-you list, so a per-field failure degrades to a partial result
+        // instead of aborting the whole run with a scary error.
       }
       fillIndex++
       busEmit('progress', {
