@@ -286,6 +286,10 @@
     'spouse', 'work authorization', 'visa', 'sponsorship', 'citizenship', 'gender',
     'race', 'ethnicity', 'disability', 'veteran', 'eeo', 'salary expectation',
     'ssn', 'social security', 'date of birth',
+    // Kept in sync with apply-shared.js SENSITIVE_DENYLIST (reordered/plural forms).
+    'authorized to work', 'eligible to work', 'right to work', 'work permit',
+    'legally authorized', 'work eligibility', 'salary expectations', 'expected salary',
+    'desired salary', 'current salary', 'salary requirement',
   ]
 
   function denylist() {
@@ -851,6 +855,64 @@
       return out
     }
 
+    // ---- free-text screening questions (for the sidebar AI-draft feature) ----
+    // A textarea the user has NOT typed in, that is not sensitive and is not one
+    // of our mapped profile fields, with a readable label = a screening question
+    // the user can ask JobSwiper to draft an honest answer for. We never touch
+    // these automatically; the sidebar offers an explicit per-question button.
+    function computeQuestions(formRoot) {
+      var apply = window.__jobswiperApply
+      if (!apply || !formRoot) return []
+      var areas = Array.prototype.slice.call(formRoot.querySelectorAll('textarea'))
+      var out = []
+      var seen = Object.create(null)
+      for (var i = 0; i < areas.length && out.length < 8; i++) {
+        var input = areas[i]
+        if (!apply.isFillableInput(input, formRoot)) continue
+        if (dirtyInputs.has(input) || filledInputs.has(input)) continue
+        var sig = buildInputSignals(input)
+        var blob = [sig.autocomplete, sig.name, sig.id, sig.aria, sig.label, sig.placeholder].join(' ')
+        if (labelIsSensitive(blob)) continue
+        // Skip a textarea that is actually one of our mapped profile fields.
+        var mapped = false
+        for (var f = 0; f < FIELD_MAP.length; f++) {
+          if (scoreFieldForSignals(FIELD_MAP[f], sig) >= MATCH_THRESHOLD) { mapped = true; break }
+        }
+        if (mapped) continue
+        var label = readableLabel(sig)
+        if (!label || label === 'Field') continue
+        var key = normalize(label)
+        if (seen[key]) continue
+        seen[key] = true
+        out.push({ input: input, label: label })
+      }
+      return out
+    }
+
+    // Draft an answer for question index, insert it, and narrate via 'answer'.
+    // The SW route grounds on the profile and forbids fabrication; nothing is
+    // auto-submitted. Same-frame only (the input ref does not cross the bridge).
+    function draftAnswer(index) {
+      var q = lastQuestions[index]
+      if (!q || !q.input) return
+      // Carry the label (not just the index): a redetect can rebuild the sidebar
+      // rows, so the completion must be matched by a stable id, not array slot.
+      var label = q.label
+      busEmit('answer', { index: index, label: label, status: 'drafting' })
+      try {
+        chrome.runtime.sendMessage({ type: 'ANSWER_QUESTION', question: q.label }, function (resp) {
+          if (chrome.runtime.lastError || !resp || resp.success === false || !resp.answer) {
+            busEmit('answer', { index: index, label: label, status: 'error' })
+            return
+          }
+          try { fillInput(q.input, String(resp.answer)) } catch (e) {}
+          busEmit('answer', { index: index, label: label, status: 'done' })
+        })
+      } catch (e) {
+        busEmit('answer', { index: index, label: label, status: 'error' })
+      }
+    }
+
     function fieldLabel(key, lang) {
       var tr = t(lang)
       return (tr.fields && tr.fields[key]) || key
@@ -862,10 +924,11 @@
       })
     }
 
-    function planSignature(fields, skipped) {
+    function planSignature(fields, skipped, questions) {
       var a = fields.map(function (f) { return f.key + '=' + f.value }).join('|')
       var b = skipped.map(function (s) { return s.reason + ':' + s.label }).join('|')
-      return a + '||' + b
+      var c = (questions || []).map(function (q) { return q.label }).join('|')
+      return a + '||' + b + '||' + c
     }
 
     // ---- detection lifecycle -------------------------------------------------
@@ -875,6 +938,7 @@
     var detectState = 'idle'
     var detectInFlight = false
     var lastPlan = []
+    var lastQuestions = []  // free-text screening questions detected this pass (with input refs)
     var lastPlanSig = ''
 
     function emitEmpty() {
@@ -907,13 +971,19 @@
       if (!isProfileUsable(profile)) { emitAuthError('complete', lang); return }
       var plan = planFills(root, profile)
       var skipped = computeSkipped(root, plan)
+      var questions = computeQuestions(root)
       var fields = planToFields(plan, lang)
-      var sig = planSignature(fields, skipped)
+      var sig = planSignature(fields, skipped, questions)
       if (sig === lastPlanSig && detectState === 'ready') return
       lastPlan = plan
+      lastQuestions = questions
       lastPlanSig = sig
       detectState = 'ready'
-      busEmit('ready', { fields: fields, skipped: skipped })
+      busEmit('ready', {
+        fields: fields,
+        skipped: skipped,
+        questions: questions.map(function (q) { return { label: q.label } }),
+      })
     }
 
     function runDetect() {
@@ -1076,6 +1146,7 @@
       apply.startFill = startFill
       apply.stopFill = stopFill
       apply.selectCv = selectCv
+      apply.draftAnswer = draftAnswer
     }
     exposeCommands()
 

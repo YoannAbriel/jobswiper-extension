@@ -126,6 +126,11 @@
       panelLabel: 'JobSwiper apply assistant',
       timeoutTitle: 'Taking longer than expected',
       timeoutBody: 'The form may have changed. Reopen it, or fill the remaining fields yourself.',
+      questionsHead: 'JobSwiper can draft answers',
+      draftBtn: 'Draft',
+      drafting: 'Drafting...',
+      answerInserted: 'Inserted, review it before you submit',
+      answerFailed: 'Could not draft, try again',
     },
     fr: {
       collapse: 'Réduire',
@@ -185,6 +190,11 @@
       panelLabel: 'Assistant de candidature JobSwiper',
       timeoutTitle: 'Cela prend plus de temps que prévu',
       timeoutBody: 'Le formulaire a peut-être changé. Rouvrez-le, ou remplissez les champs restants vous-même.',
+      questionsHead: 'JobSwiper peut rédiger les réponses',
+      draftBtn: 'Rédiger',
+      drafting: 'Rédaction...',
+      answerInserted: 'Inséré, relisez avant d’envoyer',
+      answerFailed: 'Échec, réessayez',
     },
     es: {
       collapse: 'Ocultar',
@@ -244,6 +254,11 @@
       panelLabel: 'Asistente de candidatura JobSwiper',
       timeoutTitle: 'Está tardando más de lo esperado',
       timeoutBody: 'El formulario puede haber cambiado. Vuelve a abrirlo, o rellena los campos restantes tú mismo.',
+      questionsHead: 'JobSwiper puede redactar respuestas',
+      draftBtn: 'Redactar',
+      drafting: 'Redactando...',
+      answerInserted: 'Insertado, revísalo antes de enviar',
+      answerFailed: 'No se pudo redactar, inténtalo de nuevo',
     },
   }
 
@@ -389,8 +404,20 @@
     '.msg-card b{font-size:13.5px;color:var(--ink);}',
     '.msg-card p{font-size:12.5px;color:var(--muted);font-weight:600;margin-top:4px;line-height:1.5;}',
     '.is-empty .empty-card,.is-error .error-card{display:block;}',
-    '.is-empty .feed,.is-empty .attn,.is-empty .done-card,.is-empty .cta-row,',
-    '.is-error .feed,.is-error .attn,.is-error .done-card{display:none;}',
+    '.is-empty .feed,.is-empty .attn,.is-empty .questions,.is-empty .done-card,.is-empty .cta-row,',
+    '.is-error .feed,.is-error .attn,.is-error .questions,.is-error .done-card{display:none;}',
+    '.questions{margin-top:14px;border:1px solid var(--border);border-radius:12px;overflow:hidden;}',
+    '.q-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:12px;font-weight:800;background:var(--surface-2);color:var(--ink);}',
+    '.q-head .spark{color:var(--blue);display:inline-flex;}',
+    '.q-row{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border-top:1px solid var(--border);font-size:12.5px;}',
+    '.q-label{flex:1;min-width:0;font-weight:600;color:var(--ink);line-height:1.35;}',
+    '.q-status{font-size:11px;font-weight:700;color:var(--muted);margin-top:3px;}',
+    '.q-status.ok{color:var(--emerald);}',
+    '.q-status.err{color:var(--danger);}',
+    '.q-draft{flex-shrink:0;border:1px solid var(--blue);background:var(--blue);color:#fff;font-family:inherit;font-weight:800;font-size:11px;padding:5px 10px;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;min-width:64px;justify-content:center;}',
+    '.q-draft:hover{background:var(--blue-hover);}',
+    '.q-draft:disabled{opacity:.6;cursor:default;}',
+    '.q-draft .qspin{width:10px;height:10px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:jsw-rot .6s linear infinite;}',
     '.attn{margin-top:14px;border:1px solid var(--border);border-radius:12px;overflow:hidden;}',
     '.attn-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:12px;font-weight:800;background:var(--surface-2);color:var(--ink);}',
     '.attn-row{display:flex;align-items:center;gap:8px;padding:8px 11px;border-top:1px solid var(--border);font-size:12.5px;font-weight:600;color:var(--ink);}',
@@ -444,6 +471,7 @@
     chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>',
     check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l4 4L20 5"/></svg>',
     plus: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    spark: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17z"/></svg>',
     navApply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l4 4L20 5"/></svg>',
     navCv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/></svg>',
     navActivity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>',
@@ -501,6 +529,7 @@
             '<div class="msg-card empty-card"><b>' + esc(T.emptyTitle) + '</b><p>' + esc(T.emptyBody) + '</p></div>' +
             '<div class="msg-card error-card"><b id="errorTitle">' + esc(T.errorTitle) + '</b><p id="errorText"></p></div>' +
             '<div class="attn" id="attn" style="display:none"><div class="attn-head" id="attnHead">' + esc(T.attnHead) + '</div><div id="attnRows"></div></div>' +
+            '<div class="questions" id="questions" style="display:none"><div class="q-head" id="qHead"><span class="spark">' + IC.spark + '</span>' + esc(T.questionsHead) + '</div><div id="questionRows"></div></div>' +
             '<div class="cta-row" id="applyCta">' +
               '<button class="btn btn-primary" id="fillBtn" disabled>' + IC.check + '<span id="fillBtnText">' + esc(T.fillBtn(0)) + '</span></button>' +
               '<button class="btn btn-ghost" id="cvBtn">' + esc(T.attachCta) + '</button>' +
@@ -554,6 +583,8 @@
   var chipEl = null, chipText = null
   var readyFields = []     // [{key,label,value}] from the last ready event
   var chipMap = []         // seeded fchip elements (index-aligned to readyFields)
+  var readyQuestions = []  // [{label}] screening questions from the last ready event
+  var qRowMap = []         // { btn, status } per question row (index-aligned)
   var userSetCollapse = false
   var loaded = { cvs: false, activity: false, profile: false }
   var lastSkipped = 0
@@ -612,6 +643,7 @@
     var ep = applyView && applyView.querySelector('.empty-card p'); if (ep) ep.textContent = T.emptyBody
     var errb = applyView && applyView.querySelector('.error-card b'); if (errb && currentState !== 'error') errb.textContent = T.errorTitle
     setTextById('attnHead', T.attnHead)
+    var qh = $('qHead'); if (qh) qh.innerHTML = '<span class="spark">' + IC.spark + '</span>' + esc(T.questionsHead)
     // ctx card defaults (renderCtx owns it once a ctx event lands)
     if (!window.__jobswiperSidebarCtxSeen) {
       var tag = $('ctxTag'); if (tag) tag.textContent = T.cvTailored
@@ -870,6 +902,9 @@
     setStep('attach', 'pending'); setStep('submit', 'pending')
     // skipped list
     renderSkipped(skipped)
+    // screening questions (AI draft, explicit per-question)
+    readyQuestions = (data && Array.isArray(data.questions)) ? data.questions : []
+    renderQuestions(readyQuestions)
     // CTA
     var fb = $('fillBtn'); if (fb) fb.disabled = readyFields.length === 0
     var fbt = $('fillBtnText'); if (fbt) fbt.textContent = T.fillBtn(readyFields.length)
@@ -909,6 +944,81 @@
       }
       rows.appendChild(row)
     })
+  }
+
+  // ---- screening questions (AI draft) ----------------------------------------
+  // Render one row per detected free-text question, each with an explicit "Draft"
+  // button. Nothing is auto-answered: a draft only happens on a click, is grounded
+  // on the user's profile server-side, and is inserted for the user to review.
+  function renderQuestions(questions) {
+    var T = t()
+    var box = $('questions'), rows = $('questionRows')
+    if (!box || !rows) return
+    qRowMap = []
+    if (!questions.length) { box.style.display = 'none'; rows.innerHTML = ''; return }
+    box.style.display = ''
+    rows.innerHTML = ''
+    questions.forEach(function (q, i) {
+      var row = document.createElement('div')
+      row.className = 'q-row'
+      var main = document.createElement('div'); main.className = 'q-label-wrap'
+      main.style.flex = '1'; main.style.minWidth = '0'
+      var lbl = document.createElement('div'); lbl.className = 'q-label'; lbl.textContent = q.label || ''
+      main.appendChild(lbl)
+      var status = document.createElement('div'); status.className = 'q-status'; status.style.display = 'none'
+      main.appendChild(status)
+      row.appendChild(main)
+      var btn = document.createElement('button')
+      btn.className = 'q-draft'; btn.type = 'button'
+      btn.innerHTML = IC.spark + '<span>' + esc(T.draftBtn) + '</span>'
+      ;(function (idx, b, s) {
+        b.addEventListener('click', function () {
+          if (b.disabled) return
+          startDraftUI(b, s)
+          cmd('draftAnswer', idx)
+        })
+      })(i, btn, status)
+      row.appendChild(btn)
+      qRowMap[i] = { btn: btn, status: status, label: q.label }
+      rows.appendChild(row)
+    })
+  }
+
+  function startDraftUI(btn, status) {
+    btn.disabled = true
+    btn.innerHTML = '<span class="qspin"></span>'
+    status.style.display = 'block'; status.className = 'q-status'; status.textContent = t().drafting
+  }
+  function resetDraftBtn(btn) {
+    btn.disabled = false
+    btn.innerHTML = IC.spark + '<span>' + esc(t().draftBtn) + '</span>'
+  }
+
+  // Bus 'answer' {index, status:'drafting'|'done'|'error'}. autofill has already
+  // inserted the drafted text into the page textarea on 'done'; here we only
+  // reflect the per-row state.
+  function onAnswer(data) {
+    if (!data) return
+    // Match by label (stable across a redetect that rebuilt the rows); fall back
+    // to the raw index only if no label came through.
+    var e = null
+    if (data.label != null) {
+      for (var i = 0; i < qRowMap.length; i++) {
+        if (qRowMap[i] && qRowMap[i].label === data.label) { e = qRowMap[i]; break }
+      }
+    }
+    if (!e && typeof data.index === 'number') e = qRowMap[data.index]
+    if (!e) return
+    var T = t()
+    if (data.status === 'drafting') {
+      startDraftUI(e.btn, e.status)
+    } else if (data.status === 'done') {
+      resetDraftBtn(e.btn)
+      e.status.style.display = 'block'; e.status.className = 'q-status ok'; e.status.textContent = T.answerInserted
+    } else if (data.status === 'error') {
+      resetDraftBtn(e.btn)
+      e.status.style.display = 'block'; e.status.className = 'q-status err'; e.status.textContent = T.answerFailed
+    }
   }
 
   // Scroll the page to a skipped field and pulse it, so "REQUIRED" rows are not
@@ -1182,6 +1292,7 @@
       attach: onAttach,
       done: onDone,
       error: onError,
+      answer: onAnswer,
     })
 
     // fallback context (in case ctx fired before we subscribed)

@@ -731,6 +731,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(json)
           return
         }
+        case 'ANSWER_QUESTION': {
+          // Draft an honest, profile-grounded answer to a free-text screening
+          // question. Token stays in the SW; the app route denylist-gates and
+          // forbids fabrication. 35s: AI generation is slower than a save.
+          if (sender.id !== chrome.runtime.id) { sendResponse({ success: false }); return }
+          const token = await getValidToken()
+          if (!token) {
+            sendResponse({ success: false, error: t('notAuthenticatedError') })
+            return
+          }
+          const response = await fetchWithTimeout(
+            `${API_BASE}/api/extension/answer-question`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({
+                question: message.question,
+                jobTitle: message.jobTitle,
+                company: message.company,
+                jobDescription: message.jobDescription,
+                language: message.language,
+              }),
+            },
+            35000,
+          )
+          const json = await response.json()
+          sendResponse(json)
+          return
+        }
         default:
           sendResponse({ success: false, error: 'Unknown message type' })
       }

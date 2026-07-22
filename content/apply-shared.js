@@ -51,6 +51,20 @@
     'ssn',
     'social security',
     'date of birth',
+    // Reordered / pluralized screening phrasings the contiguous-phrase matcher
+    // would otherwise miss (e.g. "authorized to work", "salary expectations").
+    // Kept in sync with autofill.js FALLBACK_DENYLIST.
+    'authorized to work',
+    'eligible to work',
+    'right to work',
+    'work permit',
+    'legally authorized',
+    'work eligibility',
+    'salary expectations',
+    'expected salary',
+    'desired salary',
+    'current salary',
+    'salary requirement',
   ]
 
   // Tokens that mark a <form> (or container) as NOT an application form. Matched
