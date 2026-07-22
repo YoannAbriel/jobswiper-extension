@@ -260,7 +260,11 @@
   function bus() { return window.__jobswiperApply || null }
   function cmd(name, arg) {
     var b = bus()
-    if (b && typeof b[name] === 'function') { try { b[name](arg) } catch (e) { /* noop */ } }
+    if (!b) return
+    // Prefer command(): in the top frame it routes to the child ATS frame that
+    // owns the form (iframe bridge), and falls back to the direct local command.
+    if (typeof b.command === 'function') { try { b.command(name, arg) } catch (e) { /* noop */ } return }
+    if (typeof b[name] === 'function') { try { b[name](arg) } catch (e) { /* noop */ } }
   }
   function bindBus(handlers) {
     var tries = 0
@@ -1233,7 +1237,12 @@
   // job application). No host/shadow is created until the gate passes.
   function isLikelyJob() {
     var b = bus()
-    return !!(b && typeof b.isLikelyJobApplication === 'function' && b.isLikelyJobApplication())
+    if (!b) return false
+    var direct = typeof b.isLikelyJobApplication === 'function' && b.isLikelyJobApplication()
+    // A child ATS iframe that reported an apply form via the bridge also counts,
+    // even when the top frame itself has no visible form (embedded Greenhouse).
+    var framed = typeof b.hasFrameApply === 'function' && b.hasFrameApply()
+    return !!(direct || framed)
   }
 
   function maybeMount() {

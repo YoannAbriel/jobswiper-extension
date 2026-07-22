@@ -281,9 +281,10 @@
     }
 
     // Safe file inputs inside the resolved application form. querySelectorAll
-    // does not pierce shadow roots and we never inject into iframes (top-frame
-    // only, no all_frames), so shadow-DOM / iframed uploaders yield 0 here and
-    // degrade to Download.
+    // does not pierce shadow roots. On ATS hosts this script also runs INSIDE the
+    // embed iframe (manifest all_frames, scoped to ATS hosts), so an iframed ATS
+    // uploader is handled in its own frame; a shadow-DOM uploader still yields 0
+    // here and degrades to Download.
     function resolveSafeInputs() {
       var apply = window.__jobswiperApply
       var root = apply && apply.resolveFormRoot ? apply.resolveFormRoot() : null

@@ -527,6 +527,101 @@
 
   function last(evt) { return busLast[evt] }
 
+  // ---- cross-frame bridge --------------------------------------------------
+  // Some ATS forms (Greenhouse /embed/job_app, ...) render inside an iframe on a
+  // company careers page. The manifest injects the apply scripts into those ATS
+  // subframes (all_frames, scoped to ATS hosts ONLY, never arbitrary iframes),
+  // but the sidebar lives in the TOP frame. This bridge lets the top-frame
+  // sidebar observe and drive an apply form that lives in a trusted ATS subframe,
+  // over postMessage:
+  //   child (subframe) --up--> parent : forwards bus events (state) as they fire
+  //   parent (top)   --down--> child  : forwards apply commands (startFill, ...)
+  // Trust + privacy: the parent only accepts events whose origin is a known ATS
+  // host; DOM node refs are stripped before crossing (not cloneable, and not
+  // meaningful across frames); nothing but the user's own already-in-page profile
+  // values ever crosses, and only upward to the parent, never a token.
+  var BRIDGE_EVENTS = ['ctx', 'detecting', 'ready', 'empty', 'progress', 'filled', 'attach', 'done', 'error']
+  var BRIDGE_CMDS = ['startFill', 'stopFill', 'attachCv', 'selectCv']
+  var isSubframe = false
+  try { isSubframe = window.top !== window.self } catch (e) { isSubframe = true }
+  var bridgedSource = null   // top frame: the child window that owns the active apply
+  var frameApply = false     // top frame: a child frame has reported an apply form
+
+  function stripInputs(arr) {
+    return Array.isArray(arr) ? arr.map(function (s) { return { label: s && s.label, reason: s && s.reason } }) : arr
+  }
+
+  // Reduce an event payload to a structured-clone-safe shape (drop DOM nodes).
+  function sanitizeForFrame(evt, data) {
+    if (!data) return data
+    if (evt === 'ready') {
+      return {
+        fields: Array.isArray(data.fields)
+          ? data.fields.map(function (f) { return { key: f.key, label: f.label, value: f.value } })
+          : [],
+        skipped: stripInputs(data.skipped),
+      }
+    }
+    if (evt === 'done') {
+      return { filled: data.filled, total: data.total, skipped: data.skipped, unfilled: stripInputs(data.unfilled) }
+    }
+    // ctx / detecting / empty / progress / filled / attach / error carry only
+    // plain cloneable data already.
+    return data
+  }
+
+  function isAtsOrigin(origin) {
+    try { return matchesKnownAts(new URL(origin).hostname) } catch (e) { return false }
+  }
+
+  function initFrameBridge() {
+    if (isSubframe) {
+      // Child: forward local bus emits up; run commands received from the parent.
+      BRIDGE_EVENTS.forEach(function (evt) {
+        on(evt, function (data) {
+          try { window.parent.postMessage({ __jswApply: 1, dir: 'up', evt: evt, data: sanitizeForFrame(evt, data) }, '*') } catch (e) {}
+        })
+      })
+      window.addEventListener('message', function (e) {
+        // Only our DIRECT parent may command this child. Without this a sibling
+        // iframe / ad on the same top page (reachable via window.top.frames[n])
+        // could force a fill/attach with no user intent.
+        if (e.source !== window.parent) return
+        var m = e.data
+        if (!m || m.__jswApply !== 1 || m.dir !== 'down') return
+        if (BRIDGE_CMDS.indexOf(m.cmd) === -1) return
+        var fn = g.__jobswiperApply && g.__jobswiperApply[m.cmd]
+        if (typeof fn === 'function') { try { fn(m.arg) } catch (e2) {} }
+      })
+    } else {
+      // Top frame: re-emit trusted child apply events on the local bus so the
+      // sidebar sees them, and remember the child so commands route back down.
+      window.addEventListener('message', function (e) {
+        var m = e.data
+        if (!m || m.__jswApply !== 1 || m.dir !== 'up') return
+        if (BRIDGE_EVENTS.indexOf(m.evt) === -1) return
+        if (!isAtsOrigin(e.origin)) return
+        bridgedSource = e.source
+        frameApply = true
+        emit(m.evt, m.data)
+      })
+    }
+  }
+
+  // Command dispatcher the sidebar calls. When the active apply lives in a child
+  // ATS frame, route the command ONLY down to it (calling the local command too
+  // would fire a spurious no-op on the formless parent). Otherwise run it locally.
+  function command(name, arg) {
+    if (!isSubframe && bridgedSource && BRIDGE_CMDS.indexOf(name) !== -1) {
+      try { bridgedSource.postMessage({ __jswApply: 1, dir: 'down', cmd: name, arg: arg }, '*') } catch (e) {}
+      return
+    }
+    var fn = g.__jobswiperApply && g.__jobswiperApply[name]
+    if (typeof fn === 'function') { try { fn(arg) } catch (e) {} }
+  }
+
+  function hasFrameApply() { return frameApply }
+
   g.__jobswiperApply = {
     resolveFormRoot: resolveFormRoot,
     isFillableInput: isFillableInput,
@@ -541,7 +636,16 @@
     off: off,
     emit: emit,
     last: last,
+    // Cross-frame bridge: command() routes apply commands to the child ATS frame
+    // that owns the form; hasFrameApply() is true once such a child reported one.
+    command: command,
+    hasFrameApply: hasFrameApply,
   }
+
+  // Wire the cross-frame bridge (browser only) now that the bus + command
+  // surface exist. Guarded so requiring this module under node (unit tests) does
+  // not touch window.addEventListener / window.parent.
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') initFrameBridge()
 
   // node-only export channel so the pure pieces (denylist, form-rejection,
   // field counting) can be exercised by node:test. Never runs in the browser.
