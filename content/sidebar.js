@@ -1416,13 +1416,43 @@
     if (name === 'profile' && !loaded.profile) { loaded.profile = true; loadProfile() }
   }
 
+  // ---- content squeeze -------------------------------------------------------
+  // A real side panel pushes the page instead of overlapping it: when the panel
+  // is expanded we shift the page left by the panel's footprint (margin-right on
+  // <html>). Done via a class + an injected page-level style so a media query can
+  // drop the margin on narrow screens (where the panel goes full width instead).
+  var SIDEBAR_SPACE = 384 // sb width (360) + right gap (14) + a little breathing room
+  function ensureSqueezeStyle() {
+    if (document.getElementById('jsw-squeeze-style')) return
+    var s = document.createElement('style')
+    s.id = 'jsw-squeeze-style'
+    s.textContent = 'html.jsw-squeezed{margin-right:' + SIDEBAR_SPACE + 'px !important;' +
+      'transition:margin-right .28s cubic-bezier(.4,0,.2,1) !important;}' +
+      '@media (max-width:720px){html.jsw-squeezed{margin-right:0 !important;}}'
+    ;(document.head || document.documentElement).appendChild(s)
+  }
+  function applySqueeze(on) {
+    try {
+      if (on) { ensureSqueezeStyle(); document.documentElement.classList.add('jsw-squeezed') }
+      else { document.documentElement.classList.remove('jsw-squeezed') }
+    } catch (e) { /* noop */ }
+  }
+  function removeSqueeze() {
+    try {
+      document.documentElement.classList.remove('jsw-squeezed')
+      var s = document.getElementById('jsw-squeeze-style'); if (s) s.remove()
+    } catch (e) { /* noop */ }
+  }
+
   function collapse() {
     if (sbEl) sbEl.classList.add('collapsed')
+    applySqueeze(false)
     userSetCollapse = true
     storageSet({ sidebarCollapsed: true })
   }
   function expand() {
     if (sbEl) sbEl.classList.remove('collapsed')
+    applySqueeze(true)
   }
   function userExpand() {
     expand()
@@ -1542,6 +1572,7 @@
   }
   function teardownVisual() {
     closeWidgetMenu()
+    removeSqueeze() // give the page back its full width
     unbindBus() // drop this mount's bus subscriptions so a re-mount does not double them
     var host = document.getElementById(HOST_ID)
     if (host) host.remove()
@@ -1631,7 +1662,7 @@
     primeContextFallback()
   }
 
-  function collapseSilent() { if (sbEl) sbEl.classList.add('collapsed') }
+  function collapseSilent() { if (sbEl) sbEl.classList.add('collapsed'); applySqueeze(false) }
 
   // Mount: resolve the user's app locale (from their cached profile in the SW)
   // BEFORE building the shell, so the chrome renders in the user's language, not
