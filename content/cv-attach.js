@@ -71,11 +71,42 @@
     return false
   }
 
-  // Given the count of safe file inputs, decide the flow.
-  function selectMode(safeCount) {
-    if (safeCount === 1) return 'attach'
-    if (safeCount > 1) return 'pick'
-    return 'download'
+  // ---- resume-vs-other file-input classification (pure, node-testable) ------
+  // A form can expose several uploaders (resume, cover letter, portfolio,
+  // references). The resume PDF must land in the RESUME slot and never in a
+  // cover-letter / portfolio field. Multilingual: cover-letter / portfolio /
+  // reference / photo slots score hard-negative; a resume/cv slot scores
+  // positive; anything else stays neutral (0). The DOM blob-building lives in
+  // the browser layer (fileInputResumeScore); this regex classification is pure.
+  var RESUME_RE = /resume|r[ée]sum[ée]|\bcv\b|curriculum|lebenslauf|hoja de vida|curriculo|currículo/i
+  var NOT_RESUME_RE = /cover\s*letter|lettre de motivation|motivation|anschreiben|carta de presentaci|portfolio|reference letter|transcript|dipl[oô]me|diploma|\bphoto\b|passport|id card/i
+
+  function scoreResumeBlob(blob) {
+    if (NOT_RESUME_RE.test(blob)) return -100
+    if (RESUME_RE.test(blob)) return 100
+    return 0
+  }
+
+  // Given per-input resume scores, decide where to attach the resume PDF:
+  //   { index }                 attach to safeInputs[index]
+  //   { index:-1, ambiguous }   multiple slots, no clear winner -> user picks
+  //   { index:-1, blocked }     the best/only slot is clearly NOT a resume slot
+  //   { index:-1 }              nothing to attach to
+  function decideAttach(scores) {
+    if (!scores || !scores.length) return { index: -1 }
+    var bestI = 0
+    for (var i = 1; i < scores.length; i++) { if (scores[i] > scores[bestI]) bestI = i }
+    var best = scores[bestI]
+    if (best > 0) {
+      // A tie between two positive resume slots is genuinely ambiguous.
+      for (var j = 0; j < scores.length; j++) {
+        if (j !== bestI && scores[j] === best) return { index: -1, ambiguous: true }
+      }
+      return { index: bestI }
+    }
+    if (best < 0) return { index: -1, blocked: true }
+    if (scores.length === 1) return { index: 0 }
+    return { index: -1, ambiguous: true }
   }
 
   // Base64 -> bytes. atob exists in both the browser and modern node, so the
@@ -284,12 +315,8 @@
       return parts.join(' ').slice(0, 500)
     }
 
-    // Multilingual: cover-letter / portfolio / reference / photo slots score hard
-    // negative (never the resume PDF); a resume/cv slot scores positive; anything
-    // else stays neutral (0).
-    var RESUME_RE = /resume|r[ée]sum[ée]|\bcv\b|curriculum|lebenslauf|hoja de vida|curriculo|currículo/i
-    var NOT_RESUME_RE = /cover\s*letter|lettre de motivation|motivation|anschreiben|carta de presentaci|portfolio|reference letter|transcript|dipl[oô]me|diploma|\bphoto\b|passport|id card/i
-
+    // DOM blob-building for one file input; the classification itself is the
+    // pure, node-tested scoreResumeBlob above.
     function fileInputResumeScore(el) {
       var blob = [
         el.getAttribute('name') || '',
@@ -298,28 +325,15 @@
         el.getAttribute('accept') || '',
         fileInputLabelText(el),
       ].join(' ')
-      if (NOT_RESUME_RE.test(blob)) return -100
-      if (RESUME_RE.test(blob)) return 100
-      return 0
+      return scoreResumeBlob(blob)
     }
 
-    // Decide where to attach the resume PDF given the safe inputs:
-    //   { target }                       attach here
-    //   { target:null, ambiguous:true }  multiple slots, no clear winner -> let the user pick
-    //   { target:null, blocked:true }    the only slot is clearly NOT a resume slot
-    //   { target:null }                  nothing safe to attach to
+    // Map the safe inputs to the attach decision (pure decideAttach) and resolve
+    // the chosen element. Shape: { target, ambiguous?, blocked? }.
     function chooseAttachTarget(safeInputs) {
       if (!safeInputs || !safeInputs.length) return { target: null }
-      var scored = safeInputs.map(function (el) { return { el: el, s: fileInputResumeScore(el) } })
-      scored.sort(function (a, b) { return b.s - a.s })
-      var top = scored[0]
-      if (top.s > 0) {
-        if (scored.length > 1 && scored[1].s === top.s) return { target: null, ambiguous: true }
-        return { target: top.el }
-      }
-      if (top.s < 0) return { target: null, blocked: true }
-      if (safeInputs.length === 1) return { target: safeInputs[0] }
-      return { target: null, ambiguous: true }
+      var d = decideAttach(safeInputs.map(fileInputResumeScore))
+      return { target: d.index >= 0 ? safeInputs[d.index] : null, ambiguous: d.ambiguous, blocked: d.blocked }
     }
 
     // ---- closed-shadow overlay ----------------------------------------------
@@ -577,8 +591,8 @@
           var safe = resolveSafeInputs()
           var choice = chooseAttachTarget(safe)
           // Multiple plausible slots with no clear resume winner: let the user
-          // click the right field rather than guess.
-          if (!choice.target && choice.ambiguous && safe.length > 1) { enterPickMode(safe); return }
+          // click the right field rather than guess (ambiguous implies 2+ slots).
+          if (!choice.target && choice.ambiguous) { enterPickMode(safe); return }
           setBusy(true)
           withPdf(setStatus, function (bytes, name) {
             if (choice.target) {
@@ -860,7 +874,8 @@
       isValidUuid: isValidUuid,
       deriveFilename: deriveFilename,
       acceptOk: acceptOk,
-      selectMode: selectMode,
+      scoreResumeBlob: scoreResumeBlob,
+      decideAttach: decideAttach,
       base64ToBytes: base64ToBytes,
       MAX_PDF_BYTES: MAX_PDF_BYTES,
     }

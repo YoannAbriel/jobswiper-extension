@@ -125,6 +125,14 @@
     return (' ' + text + ' ').indexOf(' ' + phrase + ' ') !== -1
   }
 
+  // Whitespace-normalize a candidate label and discard it (return '') when it is
+  // too long to be a real label: a large fieldset legend or wrapper would
+  // otherwise pollute every grouped field's signals with a block of body text.
+  function boundedLabel(s) {
+    var v = (s == null ? '' : String(s)).replace(/\s+/g, ' ').trim()
+    return v.length > 60 ? '' : v
+  }
+
   // ---- field taxonomy --------------------------------------------------------
   // Only the 8 keys autofill v2 actually maps. github/headline are in the
   // profile payload but not mapped to inputs in v1 (ATS rarely expose them).
@@ -348,14 +356,13 @@
             pseudo = prev.textContent || ''
           }
         }
-        pseudo = pseudo.replace(/\s+/g, ' ').trim()
-        if (pseudo.length > 60) pseudo = ''
+        pseudo = boundedLabel(pseudo)
       }
       var label = [
         forLabel ? forLabel.textContent : '',
         wrapLabel ? wrapLabel.textContent : '',
         fieldLabel ? fieldLabel.textContent : '',
-        legendEl ? legendEl.textContent : '',
+        boundedLabel(legendEl ? legendEl.textContent : ''),
         pseudo,
       ].filter(Boolean).join(' ')
       return {

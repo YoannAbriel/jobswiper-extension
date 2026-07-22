@@ -13,7 +13,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const cv = require('../content/cv-attach.js')
-const { isValidUuid, deriveFilename, acceptOk, selectMode, base64ToBytes, MAX_PDF_BYTES } = cv
+const { isValidUuid, deriveFilename, acceptOk, scoreResumeBlob, decideAttach, base64ToBytes, MAX_PDF_BYTES } = cv
 
 const UUID = '11111111-2222-3333-4444-555555555555'
 
@@ -50,11 +50,34 @@ test('acceptOk allows document inputs and empty accept, rejects image-only', () 
   assert.equal(acceptOk('text/plain'), false)
 })
 
-test('selectMode maps the safe-input count to a flow', () => {
-  assert.equal(selectMode(0), 'download')
-  assert.equal(selectMode(1), 'attach')
-  assert.equal(selectMode(2), 'pick')
-  assert.equal(selectMode(9), 'pick')
+test('scoreResumeBlob classifies resume vs cover-letter vs neutral (multilingual)', () => {
+  // resume / cv slots -> +100
+  assert.equal(scoreResumeBlob('Upload your resume'), 100)
+  assert.equal(scoreResumeBlob('CV / Résumé'), 100)
+  assert.equal(scoreResumeBlob('Lebenslauf hochladen'), 100) // DE
+  assert.equal(scoreResumeBlob('Curriculum vitae'), 100)
+  // cover-letter / portfolio / reference / photo -> hard negative, and it wins
+  // even when a resume word is also present (NOT_RESUME checked first)
+  assert.equal(scoreResumeBlob('Cover letter'), -100)
+  assert.equal(scoreResumeBlob('Lettre de motivation'), -100) // FR
+  assert.equal(scoreResumeBlob('Carta de presentación'), -100) // ES
+  assert.equal(scoreResumeBlob('Anschreiben'), -100) // DE
+  assert.equal(scoreResumeBlob('Upload your portfolio, not your resume'), -100)
+  // neutral -> 0
+  assert.equal(scoreResumeBlob('Additional documents'), 0)
+  assert.equal(scoreResumeBlob(''), 0)
+  // \bcv\b must not fire on unrelated tokens
+  assert.equal(scoreResumeBlob('CVV security code'), 0)
+})
+
+test('decideAttach routes per-input scores to attach / pick / download', () => {
+  assert.deepEqual(decideAttach([]), { index: -1 })
+  assert.deepEqual(decideAttach([0]), { index: 0 }) // single neutral -> use it
+  assert.deepEqual(decideAttach([-100]), { index: -1, blocked: true }) // only a non-resume slot
+  assert.deepEqual(decideAttach([100, -100]), { index: 0 }) // resume beats cover letter
+  assert.deepEqual(decideAttach([-100, 100]), { index: 1 })
+  assert.deepEqual(decideAttach([100, 100]), { index: -1, ambiguous: true }) // tie -> pick
+  assert.deepEqual(decideAttach([0, 0]), { index: -1, ambiguous: true }) // all neutral -> pick
 })
 
 test('base64 round-trips PDF bytes byte-for-byte', () => {
