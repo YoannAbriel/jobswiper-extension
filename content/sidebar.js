@@ -123,6 +123,9 @@
       managePlan: 'Manage subscription',
       qAutofills: 'Autofills', qUnlimited: 'unlimited',
       signIn: 'Sign in to JobSwiper',
+      panelLabel: 'JobSwiper apply assistant',
+      timeoutTitle: 'Taking longer than expected',
+      timeoutBody: 'The form may have changed. Reopen it, or fill the remaining fields yourself.',
     },
     fr: {
       collapse: 'Réduire',
@@ -179,6 +182,9 @@
       managePlan: 'Gérer l’abonnement',
       qAutofills: 'Autofills', qUnlimited: 'illimité',
       signIn: 'Se connecter à JobSwiper',
+      panelLabel: 'Assistant de candidature JobSwiper',
+      timeoutTitle: 'Cela prend plus de temps que prévu',
+      timeoutBody: 'Le formulaire a peut-être changé. Rouvrez-le, ou remplissez les champs restants vous-même.',
     },
     es: {
       collapse: 'Ocultar',
@@ -235,6 +241,9 @@
       managePlan: 'Gestionar suscripción',
       qAutofills: 'Autofills', qUnlimited: 'ilimitado',
       signIn: 'Iniciar sesión en JobSwiper',
+      panelLabel: 'Asistente de candidatura JobSwiper',
+      timeoutTitle: 'Está tardando más de lo esperado',
+      timeoutBody: 'El formulario puede haber cambiado. Vuelve a abrirlo, o rellena los campos restantes tú mismo.',
     },
   }
 
@@ -452,11 +461,11 @@
     var tabLogo = logo ? '<img class="tab-logo" src="' + esc(logo) + '" alt="" width="22" height="22">' : '<span class="dot">JS</span>'
     return (
       '<style>' + CSS + '</style>' +
-      '<aside class="sb" id="sb">' +
+      '<aside class="sb" id="sb" aria-label="' + esc(T.panelLabel) + '">' +
         '<div class="sb-head">' +
           headLogo +
           '<span class="wordmark">Job<span class="b">Swiper</span></span>' +
-          '<span class="state-chip" id="chip" data-s="detecting"><span class="sdot"></span><span id="chipText">' + esc(T.state.detecting) + '</span></span>' +
+          '<span class="state-chip" id="chip" data-s="detecting" role="status" aria-live="polite" aria-atomic="true"><span class="sdot"></span><span id="chipText">' + esc(T.state.detecting) + '</span></span>' +
           '<button class="icon-btn" id="collapseBtn" title="' + esc(T.collapse) + '" aria-label="' + esc(T.collapse) + '">' + IC.chevron + '</button>' +
         '</div>' +
         '<div class="views">' +
@@ -476,7 +485,7 @@
               '<div class="step" data-step="detect" data-st="pending"><div class="mk" id="detectMk">1</div><div class="lbl" id="detectLbl">' + esc(T.fillStep) + '</div></div>' +
               '<div class="step" data-step="match" data-st="pending"><div class="mk">2</div><div class="lbl">' + esc(T.profileMatched) + '<small>' + esc(T.profileMatchedSub) + '</small></div></div>' +
               '<div class="step" data-step="fill" data-st="pending"><div class="mk" id="fillMk">3</div><div class="lbl" id="fillLbl">' + esc(T.fillStep) + '</div></div>' +
-              '<div class="prog-wrap"><div class="prog"><i id="progBar"></i></div>' +
+              '<div class="prog-wrap"><div class="prog" id="progEl" role="progressbar" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><i id="progBar"></i></div>' +
                 '<div class="prog-meta"><span id="progText">' + esc(T.filling(0, 0)) + '</span><span class="stop" id="stopBtn">■ ' + esc(T.stop) + '</span></div></div>' +
               '<div class="filled-list" id="filledList"></div>' +
               '<div class="step" data-step="attach" data-st="pending"><div class="mk">↑</div><div class="lbl" id="attachLbl">' + esc(T.attachStep) + '</div></div>' +
@@ -484,7 +493,7 @@
             '</div>' +
             '<div class="done-card"><b id="doneTitle">' + esc(T.doneMsgs[0]) + '</b><p id="doneText"></p></div>' +
             '<div class="msg-card empty-card"><b>' + esc(T.emptyTitle) + '</b><p>' + esc(T.emptyBody) + '</p></div>' +
-            '<div class="msg-card error-card"><b>' + esc(T.errorTitle) + '</b><p id="errorText"></p></div>' +
+            '<div class="msg-card error-card"><b id="errorTitle">' + esc(T.errorTitle) + '</b><p id="errorText"></p></div>' +
             '<div class="attn" id="attn" style="display:none"><div class="attn-head" id="attnHead">' + esc(T.attnHead) + '</div><div id="attnRows"></div></div>' +
             '<div class="cta-row" id="applyCta">' +
               '<button class="btn btn-primary" id="fillBtn" disabled>' + IC.check + '<span id="fillBtnText">' + esc(T.fillBtn(0)) + '</span></button>' +
@@ -542,6 +551,8 @@
   var userSetCollapse = false
   var loaded = { cvs: false, activity: false, profile: false }
   var lastSkipped = 0
+  var lastSkippedList = []  // the last detection skipped array, so readback fails append to it
+  var fillWatchdog = null   // fires if a started fill never reports progress/done
   var currentState = 'detecting' // mirrors the .is-<state> on #view-apply
   // Once the user starts a fill, lock the apply view so the post-fill re-detect
   // (which now sees 0 fillable inputs, because they are filled) cannot downgrade
@@ -571,6 +582,7 @@
     var T = t()
     // header
     var cb = $('collapseBtn'); if (cb) { cb.setAttribute('title', T.collapse); cb.setAttribute('aria-label', T.collapse) }
+    var sbA = $('sb'); if (sbA) sbA.setAttribute('aria-label', T.panelLabel)
     if (chipText) chipText.textContent = T.state[currentState] || ''
     // apply view: section label + non-dynamic feed steps
     setTextById('applyLabel', T.applyWith)
@@ -592,7 +604,7 @@
     // message cards + skipped header
     var eb = applyView && applyView.querySelector('.empty-card b'); if (eb) eb.textContent = T.emptyTitle
     var ep = applyView && applyView.querySelector('.empty-card p'); if (ep) ep.textContent = T.emptyBody
-    var errb = applyView && applyView.querySelector('.error-card b'); if (errb) errb.textContent = T.errorTitle
+    var errb = applyView && applyView.querySelector('.error-card b'); if (errb && currentState !== 'error') errb.textContent = T.errorTitle
     setTextById('attnHead', T.attnHead)
     // ctx card defaults (renderCtx owns it once a ctx event lands)
     if (!window.__jobswiperSidebarCtxSeen) {
@@ -828,6 +840,7 @@
     readyFields = fields
     var skipped = (data && Array.isArray(data.skipped)) ? data.skipped : []
     lastSkipped = skipped.length
+    lastSkippedList = skipped
     setState('ready')
     // detect step -> done
     setStep('detect', 'done')
@@ -843,6 +856,7 @@
     var fl = $('fillLbl'); if (fl) fl.textContent = T.fillStep
     // reset progress + filled list
     var pb = $('progBar'); if (pb) pb.style.width = '0'
+    var pe = $('progEl'); if (pe) { pe.setAttribute('aria-valuemax', String(readyFields.length)); pe.setAttribute('aria-valuenow', '0') }
     var pt = $('progText'); if (pt) pt.textContent = T.filling(0, readyFields.length)
     var fList = $('filledList'); if (fList) fList.innerHTML = ''
     chipMap = []
@@ -899,6 +913,7 @@
     if (!chipMap.length) seedFilledChips()
     var fb = $('fillBtn'); if (fb) fb.disabled = true
     var pt = $('progText'); if (pt) pt.textContent = t().filling(0, readyFields.length)
+    armFillWatchdog()
   }
 
   function onProgress(data) {
@@ -909,7 +924,9 @@
     if (applyView && applyView.className.indexOf('is-filling') === -1) {
       enterFilling()
     }
+    armFillWatchdog() // progress means the fill is moving; reset the stall timer
     var pb = $('progBar'); if (pb && total) pb.style.width = (index / total * 100) + '%'
+    var pe = $('progEl'); if (pe) { pe.setAttribute('aria-valuemax', String(total)); pe.setAttribute('aria-valuenow', String(index)) }
     var pt = $('progText'); if (pt) pt.textContent = T.filling(index, total)
     // tick chips up to index
     for (var i = 0; i < index && i < chipMap.length; i++) {
@@ -923,6 +940,7 @@
 
   function onFilled(data) {
     var T = t()
+    clearFillWatchdog()
     var count = data && data.count != null ? data.count : readyFields.length
     setStep('fill', 'done')
     var fmk = $('fillMk'); if (fmk) { fmk.innerHTML = ''; fmk.textContent = '✓' }
@@ -953,6 +971,7 @@
 
   function onDone(data) {
     var T = t()
+    clearFillWatchdog()
     var filled = data && data.filled != null ? data.filled : readyFields.length
     var skipped = data && data.skipped != null ? data.skipped : lastSkipped
     setState('done')
@@ -961,19 +980,67 @@
     var dt = $('doneTitle')
     if (dt) dt.textContent = T.doneMsgs[Math.floor(Date.now() / 1000) % T.doneMsgs.length]
     var dx = $('doneText'); if (dx) dx.textContent = T.doneText(filled, skipped)
+    // Fields that were attempted but did not stick (readback failures) are routed
+    // into the skipped list so the "needs you" panel reflects the honest state,
+    // and their optimistic ✓ chip is reverted so nothing reads as both filled and
+    // still-needed.
+    if (data && Array.isArray(data.unfilled) && data.unfilled.length) {
+      renderSkipped(lastSkippedList.concat(data.unfilled))
+      untickChips(data.unfilled)
+    }
+  }
+
+  function untickChips(unfilled) {
+    if (!chipMap.length) return
+    var labels = Object.create(null)
+    unfilled.forEach(function (u) { if (u && u.label) labels[u.label] = true })
+    for (var i = 0; i < chipMap.length; i++) {
+      var c = chipMap[i]; if (!c) continue
+      var fk = c.querySelector('.fk')
+      if (fk && labels[fk.textContent]) {
+        c.classList.add('pending')
+        var tk = c.querySelector('.tick'); if (tk) tk.textContent = '○'
+      }
+    }
   }
 
   function onEmpty() {
+    clearFillWatchdog()
     if (flowLocked) return // keep the done summary; the filled form still exists
     setState('empty')
     var fb = $('fillBtn'); if (fb) fb.disabled = true
   }
 
   function onError(data) {
+    clearFillWatchdog()
     flowLocked = false // a real failure always surfaces
     setState('error')
+    var et = $('errorTitle'); if (et) et.textContent = t().errorTitle
     var ex = $('errorText')
     if (ex) ex.textContent = (data && data.message) ? String(data.message) : ''
+  }
+
+  // ---- fill watchdog ---------------------------------------------------------
+  // The user clicks Fill -> enterFilling() locks the view optimistically, then
+  // startFill runs an async SW round-trip. If that round-trip (or the fill loop)
+  // never reports back, the sidebar would sit in "Filling" forever. The watchdog
+  // surfaces a distinct timeout state instead. It is (re)armed on each progress
+  // tick, so only a genuine stall trips it, and cleared on any terminal event.
+  function armFillWatchdog() {
+    clearFillWatchdog()
+    fillWatchdog = setTimeout(onFillTimeout, 15000)
+  }
+  function clearFillWatchdog() {
+    if (fillWatchdog) { clearTimeout(fillWatchdog); fillWatchdog = null }
+  }
+  function onFillTimeout() {
+    fillWatchdog = null
+    if (currentState !== 'filling') return
+    flowLocked = false
+    var T = t()
+    setState('error')
+    var et = $('errorTitle'); if (et) et.textContent = T.timeoutTitle
+    var ex = $('errorText'); if (ex) ex.textContent = T.timeoutBody
   }
 
   // ---- view switching + collapse ---------------------------------------------

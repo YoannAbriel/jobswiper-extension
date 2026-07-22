@@ -268,18 +268,38 @@
   // BEFORE any DOM work so the gate stays cheap on the sites people keep open.
   var HOST_BLOCKLIST = [
     'mail.google.com', 'docs.google.com', 'calendar.google.com', 'drive.google.com', 'meet.google.com',
+    'accounts.google.com',
+    'login.microsoftonline.com', 'outlook.live.com', 'outlook.office.com', 'outlook.office365.com',
+    'mail.yahoo.com', 'icloud.com',
     'chatgpt.com', 'chat.openai.com', 'claude.ai', 'gemini.google.com', 'perplexity.ai', 'poe.com',
     'github.com', 'gitlab.com', 'bitbucket.org', 'stackoverflow.com', 'figma.com', 'notion.so',
     'trello.com', 'atlassian.net', 'slack.com', 'discord.com',
     'youtube.com', 'reddit.com', 'twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'tiktok.com',
     'pinterest.com', 'whatsapp.com', 'telegram.org', 'twitch.tv',
     'wikipedia.org', 'medium.com', 'substack.com', 'netflix.com', 'spotify.com',
+    // Our own site: the apply layer never runs on jobswiper.ai (detect.js owns it).
+    'jobswiper.ai',
   ]
+
+  // Exact-or-proper-subdomain host match. host must equal domain or end with
+  // "." + domain, so "greenhouse.io" matches "boards.greenhouse.io" but never
+  // "fakegreenhouse.io" or "greenhouse.io.evil.com". This replaces the old bare
+  // substring test (host.indexOf(domain) !== -1), which those spoof hosts slipped
+  // through in both the allowlist and the blocklist.
+  function hostMatches(host, domain) {
+    host = (host || '').toLowerCase()
+    domain = (domain || '').toLowerCase()
+    if (!host || !domain) return false
+    if (host === domain) return true
+    return host.length > domain.length &&
+      host.charAt(host.length - domain.length - 1) === '.' &&
+      host.slice(host.length - domain.length) === domain
+  }
 
   function matchesKnownAts(host) {
     host = (host || '').toLowerCase()
     for (var i = 0; i < KNOWN_ATS_HOSTS.length; i++) {
-      if (host.indexOf(KNOWN_ATS_HOSTS[i]) !== -1) return true
+      if (hostMatches(host, KNOWN_ATS_HOSTS[i])) return true
     }
     return false
   }
@@ -291,19 +311,21 @@
     host = (host || '').toLowerCase()
     path = (path || '').toLowerCase()
     for (var i = 0; i < HOST_BLOCKLIST.length; i++) {
-      if (host.indexOf(HOST_BLOCKLIST[i]) !== -1) return true
+      if (hostMatches(host, HOST_BLOCKLIST[i])) return true
     }
     // Search-engine RESULT pages only (their /search path), not the whole host.
-    if (host.indexOf('google.') !== -1 && path.indexOf('/search') === 0) return true
-    if (host.indexOf('bing.com') !== -1 && path.indexOf('/search') === 0) return true
-    if (host.indexOf('duckduckgo.com') !== -1) return true
-    if (host.indexOf('search.brave.com') !== -1) return true
-    if (host.indexOf('search.yahoo.com') !== -1) return true
-    if (host.indexOf('ecosia.org') !== -1) return true
-    if (host.indexOf('qwant.com') !== -1) return true
+    // google.* covers every regional TLD (google.fr, google.co.uk, ...) without
+    // matching an unrelated host that merely contains "google".
+    if (/(^|\.)google\.[a-z.]{2,}$/.test(host) && path.indexOf('/search') === 0) return true
+    if (hostMatches(host, 'bing.com') && path.indexOf('/search') === 0) return true
+    if (hostMatches(host, 'duckduckgo.com')) return true
+    if (hostMatches(host, 'search.brave.com')) return true
+    if (hostMatches(host, 'search.yahoo.com')) return true
+    if (hostMatches(host, 'ecosia.org')) return true
+    if (hostMatches(host, 'qwant.com')) return true
     // LinkedIn: only /jobs surfaces are application-relevant (the linkedin.js
     // capture script owns the rest). Everything else on linkedin is a hard NO.
-    if (host.indexOf('linkedin.com') !== -1 &&
+    if (hostMatches(host, 'linkedin.com') &&
         path.indexOf('/jobs') !== 0 && path.indexOf('/comm/jobs') !== 0) return true
     return false
   }
@@ -514,6 +536,7 @@
       HOST_BLOCKLIST: HOST_BLOCKLIST,
       isRejectedForm: isRejectedForm,
       applicationFieldCount: applicationFieldCount,
+      hostMatches: hostMatches,
       matchesKnownAts: matchesKnownAts,
       isBlockedSurface: isBlockedSurface,
     }

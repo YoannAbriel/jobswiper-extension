@@ -328,10 +328,35 @@
       var wrapLabel = input.closest ? input.closest('label') : null
       var fieldWrap = input.closest ? input.closest('[class*="field"]') : null
       var fieldLabel = fieldWrap ? fieldWrap.querySelector('label') : null
+      // Fieldset legend acts as the group label for grouped inputs.
+      var fs = input.closest ? input.closest('fieldset') : null
+      var legendEl = fs ? fs.querySelector('legend') : null
+      // Pseudo-label fallback: many ATS (Greenhouse, Workday, ...) render the
+      // label as a div/span with a "label"-ish class instead of a real <label>.
+      // Only consulted when no semantic label was found, and bounded to a short
+      // string so we never absorb a block of body text as the label.
+      var pseudo = ''
+      if (!forLabel && !wrapLabel && !fieldLabel && !labelledby) {
+        var pWrap = input.closest
+          ? input.closest('[class*="field" i], [class*="form-group" i], [class*="form-row" i], [class*="input" i]')
+          : null
+        var pl = pWrap ? pWrap.querySelector('[class*="label" i]') : null
+        if (pl && pl.tagName !== 'LABEL') pseudo = pl.textContent || ''
+        if (!pseudo) {
+          var prev = input.previousElementSibling
+          if (prev && (prev.tagName === 'DIV' || prev.tagName === 'SPAN' || prev.tagName === 'P')) {
+            pseudo = prev.textContent || ''
+          }
+        }
+        pseudo = pseudo.replace(/\s+/g, ' ').trim()
+        if (pseudo.length > 60) pseudo = ''
+      }
       var label = [
         forLabel ? forLabel.textContent : '',
         wrapLabel ? wrapLabel.textContent : '',
         fieldLabel ? fieldLabel.textContent : '',
+        legendEl ? legendEl.textContent : '',
+        pseudo,
       ].filter(Boolean).join(' ')
       return {
         autocomplete: input.getAttribute('autocomplete') || '',
@@ -914,13 +939,50 @@
     var fillSkipped = []
     var fillLang = 'en'
 
+    // Post-fill verification: re-read an input and report whether the value
+    // failed to land. Combobox/typeahead inputs resolve asynchronously and often
+    // hold the option label rather than the raw value, so they are never flagged.
+    // The check is deliberately lenient (empty == failed) so an input that merely
+    // reformats what we set (phone masks, date pickers) is not a false positive.
+    function readbackFailed(item) {
+      try {
+        if (!item || !item.input) return false
+        if (isComboboxInput(item.input)) return false
+        var v = String(item.input.value == null ? '' : item.input.value).trim()
+        return v === ''
+      } catch (e) { return false }
+    }
+
+    // Runs a beat after the last fill so framework-controlled inputs (React/Vue)
+    // have a tick to keep or revert what we set. Reports the CONFIRMED filled
+    // count, not the attempted count, and routes any value that did not stick into
+    // the skipped list so the sidebar shows the honest state instead of a false
+    // "N fields filled".
+    function finalizeFill() {
+      fillTimer = null
+      filling = false
+      // stopFill may have aborted during the deferred window; honor it (stopFill
+      // already emitted its own done).
+      if (fillAbort) return
+      var ok = 0
+      var unfilled = []
+      for (var i = 0; i < fillPlan.length; i++) {
+        if (readbackFailed(fillPlan[i])) {
+          unfilled.push({ label: fieldLabel(fillPlan[i].fieldKey, fillLang), reason: 'required' })
+        } else { ok++ }
+      }
+      var skippedCount = (fillSkipped ? fillSkipped.length : 0) + unfilled.length
+      busEmit('filled', { count: ok })
+      busEmit('done', { filled: ok, total: fillTotal, skipped: skippedCount, unfilled: unfilled })
+      try { showToast(t(fillLang).filledToast(ok)) } catch (e) {}
+    }
+
     function fillStep() {
       if (fillAbort) return
       if (fillIndex >= fillTotal) {
-        filling = false
-        busEmit('filled', { count: fillTotal })
-        busEmit('done', { filled: fillTotal, total: fillTotal, skipped: fillSkipped })
-        try { showToast(t(fillLang).filledToast(fillTotal)) } catch (e) {}
+        // Keep `filling` true across the deferred window so stopFill() can still
+        // abort; finalizeFill flips it false when it actually runs.
+        fillTimer = setTimeout(finalizeFill, 300)
         return
       }
       var item = fillPlan[fillIndex]
@@ -962,7 +1024,7 @@
         var plan = planFills(root, profile)
         var skipped = computeSkipped(root, plan)
         if (!plan.length) {
-          busEmit('done', { filled: 0, total: 0, skipped: skipped })
+          busEmit('done', { filled: 0, total: 0, skipped: skipped.length })
           return
         }
         runFill(plan, skipped, lang)
@@ -974,7 +1036,7 @@
       fillAbort = true
       if (fillTimer) { clearTimeout(fillTimer); fillTimer = null }
       filling = false
-      busEmit('done', { filled: fillIndex, total: fillTotal, skipped: fillSkipped })
+      busEmit('done', { filled: fillIndex, total: fillTotal, skipped: fillSkipped ? fillSkipped.length : 0 })
     }
 
     // ---- selectCv command ----------------------------------------------------
