@@ -538,129 +538,6 @@
       setTimeout(function () { toast.remove() }, 3000)
     }
 
-    // ---- closed-shadow overlay ----------------------------------------------
-    // The consent surface renders inside attachShadow({ mode: 'closed' }) so
-    // page-context JS cannot read the proposed profile values before confirm
-    // (host.shadowRoot === null from the page).
-    var PANEL_STYLE = [
-      ':host { all: initial; }',
-      '.wrap { position: fixed; bottom: 24px; right: 24px; z-index: 2147483647;',
-      '  width: 340px; max-width: calc(100vw - 32px); background: #ffffff;',
-      '  border: 1px solid rgba(0,0,0,0.12); border-radius: 12px;',
-      '  box-shadow: 0 8px 28px rgba(0,0,0,0.18);',
-      '  font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;',
-      '  color: #111827; overflow: hidden; }',
-      '.hd { padding: 14px 16px 10px; }',
-      '.title { font-size: 15px; font-weight: 700; margin: 0 0 2px; }',
-      '.sub { font-size: 12px; color: #6b7280; margin: 0; }',
-      '.rows { max-height: 260px; overflow-y: auto; padding: 4px 16px; }',
-      '.row { display: flex; justify-content: space-between; gap: 12px;',
-      '  padding: 7px 0; border-top: 1px solid rgba(0,0,0,0.06); font-size: 13px; }',
-      '.row:first-child { border-top: none; }',
-      '.k { color: #6b7280; flex: 0 0 auto; }',
-      '.v { color: #111827; font-weight: 600; text-align: right; overflow-wrap: anywhere; }',
-      '.ft { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px 14px; }',
-      '.btn { font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 8px;',
-      '  border: 1px solid transparent; cursor: pointer; font-family: inherit; }',
-      '.ghost { background: transparent; border-color: rgba(0,0,0,0.14); color: #374151; }',
-      '.ghost:hover { background: rgba(0,0,0,0.05); }',
-      '.primary { background: #1e4b8e; color: #ffffff; }',
-      '.primary:hover { background: #163a6f; }',
-      '.body { padding: 4px 16px 2px; font-size: 13px; color: #374151; }',
-      'a.primary { text-decoration: none; display: inline-block; }',
-    ].join('\n')
-
-    var activeHost = null
-
-    function closePanel() {
-      if (activeHost) {
-        activeHost.remove()
-        activeHost = null
-      }
-    }
-
-    function openPanel(build) {
-      closePanel()
-      var host = document.createElement('div')
-      host.className = 'jobswiper-autofill-host'
-      var root = host.attachShadow({ mode: 'closed' })
-      var style = document.createElement('style')
-      style.textContent = PANEL_STYLE
-      root.appendChild(style)
-      var wrap = document.createElement('div')
-      wrap.className = 'wrap'
-      build(wrap)
-      root.appendChild(wrap)
-      document.body.appendChild(host)
-      activeHost = host
-    }
-
-    function el(tag, cls, text) {
-      var node = document.createElement(tag)
-      if (cls) node.className = cls
-      if (text != null) node.textContent = text
-      return node
-    }
-
-    // Review-before-fill panel. Nothing is written until Confirm.
-    function openReviewPanel(plan, lang) {
-      var tr = t(lang)
-      openPanel(function (wrap) {
-        var hd = el('div', 'hd')
-        hd.appendChild(el('p', 'title', tr.reviewTitle))
-        hd.appendChild(el('p', 'sub', tr.reviewSubtitle))
-        wrap.appendChild(hd)
-
-        var rows = el('div', 'rows')
-        for (var i = 0; i < plan.length; i++) {
-          var row = el('div', 'row')
-          row.appendChild(el('span', 'k', tr.fields[plan[i].fieldKey] || plan[i].fieldKey))
-          row.appendChild(el('span', 'v', plan[i].value))
-          rows.appendChild(row)
-        }
-        wrap.appendChild(rows)
-
-        var ft = el('div', 'ft')
-        var cancel = el('button', 'btn ghost', tr.cancel)
-        cancel.addEventListener('click', closePanel)
-        var confirm = el('button', 'btn primary', tr.confirm(plan.length))
-        confirm.addEventListener('click', function () {
-          closePanel()
-          for (var j = 0; j < plan.length; j++) fillInput(plan[j].input, plan[j].value)
-          showToast(tr.filledToast(plan.length))
-        })
-        ft.appendChild(cancel)
-        ft.appendChild(confirm)
-        wrap.appendChild(ft)
-      })
-    }
-
-    // A deep-link panel (complete profile / sign in). No PII shown.
-    function openLinkPanel(kind, lang) {
-      var tr = t(lang)
-      var title = kind === 'signin' ? tr.signInTitle : tr.completeTitle
-      var bodyText = kind === 'signin' ? tr.signInBody : tr.completeBody
-      var cta = kind === 'signin' ? tr.signInCta : tr.completeCta
-      var href = kind === 'signin' ? (API_BASE + '/login') : (API_BASE + '/dashboard/profile')
-      openPanel(function (wrap) {
-        var hd = el('div', 'hd')
-        hd.appendChild(el('p', 'title', title))
-        wrap.appendChild(hd)
-        wrap.appendChild(el('div', 'body', bodyText))
-        var ft = el('div', 'ft')
-        var cancel = el('button', 'btn ghost', tr.cancel)
-        cancel.addEventListener('click', closePanel)
-        var link = el('a', 'btn primary', cta)
-        link.href = href
-        link.target = '_blank'
-        link.rel = 'noopener noreferrer'
-        link.addEventListener('click', closePanel)
-        ft.appendChild(cancel)
-        ft.appendChild(link)
-        wrap.appendChild(ft)
-      })
-    }
-
     // ---- profile via the service worker (token never enters page context) ----
     function getProfile() {
       return new Promise(function (resolve) {
@@ -684,12 +561,11 @@
 
     // =========================================================================
     // Bus-driven surface (sidebar). The sidebar (content/sidebar.js, loaded LAST
-    // in the manifest apply block) is now the primary surface: it subscribes to
+    // in the manifest apply block) is the only surface: it subscribes to
     // window.__jobswiperApply events and calls startFill/stopFill/selectCv. This
-    // script no longer renders its own bottom-right button or the closed-shadow
-    // review panel; both are superseded by the sidebar feed. The old panel code
-    // above is kept intact (code path preserved) but is never shown while the
-    // sidebar owns the surface, so there is never a double Fill UI.
+    // script renders nothing of its own; it emits the plan (labels AND values,
+    // see planToFields) and the sidebar shows the values before anything is
+    // written into the page.
     // =========================================================================
 
     // apply-shared.js initializes the bus on the SAME window.__jobswiperApply

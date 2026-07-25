@@ -1,28 +1,28 @@
 /**
- * JobSwiper - Apply sidebar (Shadow-DOM primary surface).
+ * JobSwiper - side panel (Shadow-DOM, single surface).
  *
- * Injected ONCE into the ATS host page. It is the primary surface for the apply
- * flow: it renders the live autofill state machine (detect -> match -> fill ->
- * attach -> submit), a transparency feed, and four secondary views (CVs,
- * Activité, Profil, Plan). It NEVER touches the form itself and NEVER fetches:
+ * Injected once per top frame. It answers ONE question: what can the user do on
+ * this page, right now. Three page contexts, plus an account gate:
  *
- *   - Form logic (planFills / fillInput / combobox / SENSITIVE_DENYLIST / field
- *     detection) lives in content/autofill.js and is not touched here.
- *   - Authenticated fetches (profile, cvs, stats, cv pdf) live in the service
- *     worker; this script only sends messages and renders the responses.
+ *   offer  - a readable job listing, no application form: match score + gaps.
+ *   apply  - an application form: the values about to be written, what is left
+ *            to the user, the form's own questions.
+ *   none   - anything else: nothing to fill, save the page, resume recent jobs.
+ *   gate   - signed out or unusable profile: one message, one action.
  *
  * Wiring (INTEGRATION CONTRACT):
  *   - Subscribes to the shared bus on window.__jobswiperApply:
- *       ctx / detecting / ready / empty / progress / filled / attach / done / error
+ *       ctx / detecting / ready / empty / progress / filled / attach / done /
+ *       error / answer / coverletter
  *   - Drives the flow via the shared commands:
- *       startFill() / stopFill() / attachCv() / selectCv(id)
+ *       startFill() / stopFill() / attachCv() / selectCv(id) / draftAnswer(i) /
+ *       generateCoverLetter()
  *   - apply-shared.js initializes the bus (loaded first). If this script loads
  *     first, it retries binding until on/emit exist (bounded), and guards with a
  *     no-op fallback so it never throws.
  *
- * There is NO double UI: this sidebar is the primary surface. The old
- * bottom-right button and closed-shadow review panel in autofill.js are
- * superseded (autofill hides them when the sidebar is present).
+ * It NEVER touches the page's form and NEVER fetches: form logic lives in
+ * autofill.js / cv-attach.js, authenticated fetches live in the service worker.
  */
 ;(function () {
   'use strict'
@@ -33,6 +33,7 @@
 
   var API_BASE = 'https://www.jobswiper.ai'
   var HOST_ID = 'jobswiper-apply-sidebar-host'
+  var PANEL_W = 380 // single source of truth: panel width AND page squeeze
 
   // ---- chrome guards ---------------------------------------------------------
   function hasRuntime() {
@@ -42,7 +43,6 @@
     if (!hasRuntime()) { if (cb) cb(null); return }
     try {
       chrome.runtime.sendMessage(msg, function (resp) {
-        // Swallow "receiving end does not exist" and context-invalidated errors.
         var err = chrome.runtime && chrome.runtime.lastError
         if (err) { if (cb) cb(null); return }
         if (cb) cb(resp || null)
@@ -57,286 +57,237 @@
     if (!hasRuntime() || !chrome.storage || !chrome.storage.local) return
     try { chrome.storage.local.set(obj) } catch (e) { /* noop */ }
   }
-  // Real extension icon URL (web_accessible_resources). Guarded so it never
-  // throws in a context where chrome.runtime.getURL is unavailable.
-  function logoUrl() {
+  function assetUrl(path) {
     try {
-      if (chrome && chrome.runtime && chrome.runtime.getURL) return chrome.runtime.getURL('icons/icon128.png')
+      if (chrome && chrome.runtime && chrome.runtime.getURL) return chrome.runtime.getURL(path)
     } catch (e) { /* noop */ }
     return ''
   }
 
-  // ---- i18n (inline table, same pickLang pattern as autofill.js/cv-attach.js) -
+  // Font faces are document-scoped: a @font-face inside a shadow root is ignored
+  // by Chrome. Register it on the document under a namespaced family so a host
+  // page shipping its own Nunito is never affected.
+  function loadFont() {
+    try {
+      var url = assetUrl('fonts/nunito-latin.woff2')
+      if (!url || typeof FontFace === 'undefined' || !document.fonts) return
+      var ff = new FontFace('JobSwiperNunito', 'url(' + url + ')', { weight: '400 900', display: 'swap' })
+      ff.load().then(function (f) { try { document.fonts.add(f) } catch (e) { /* noop */ } })
+        .catch(function () { /* falls back to the system stack */ })
+    } catch (e) { /* noop */ }
+  }
+
+  // ---- i18n ------------------------------------------------------------------
   var I18N = {
     en: {
-      collapse: 'Collapse',
-      state: { detecting: 'Analyzing…', ready: 'Ready', filling: 'Filling', done: 'Done', empty: 'No form', error: 'Error', offer: 'Job offer' },
-      nav: { apply: 'Apply', cvs: 'CV', activity: 'Activity', profile: 'Profile', plan: 'Plan' },
-      applyWith: 'Applying with',
-      cvTailored: 'TAILORED CV', cvBase: 'BASE CV',
-      tailoredFor: 'Tailored to this offer', genericCv: 'Generic CV',
-      change: 'Change',
-      detected: function (n) { return n + (n === 1 ? ' field detected' : ' fields detected') },
-      formRecognized: 'Application form recognized',
-      profileMatched: 'Profile matched',
-      profileMatchedSub: 'Your details + the tailored CV',
-      fillStep: 'Filling the fields',
-      filledStep: function (n) { return n + (n === 1 ? ' field filled' : ' fields filled') },
-      attachStep: 'Attach the CV',
-      submitStep: 'Ready to submit',
-      submitSub: 'Submitting stays yours',
-      filling: function (i, n) { return 'Filling ' + i + ' / ' + n },
-      stop: 'Stop',
-      attnHead: 'Skipped, for you to handle',
-      reasonSensitive: 'SENSITIVE', reasonRequired: 'REQUIRED',
-      jump: 'Go',
-      doneMsgs: ['All set 🎯', 'Ready to go ✨', 'Nicely done 👏'],
-      doneText: function (filled, skipped) {
-        var s = filled + (filled === 1 ? ' field filled' : ' fields filled') + ', CV attached.'
-        if (skipped > 0) s += ' ' + skipped + (skipped === 1 ? ' field needs' : ' fields need') + ' you (see below).'
-        return s
-      },
-      emptyTitle: 'No application form here',
-      emptyBody: 'Open an application page and JobSwiper will offer to fill it.',
-      errorTitle: 'Something went wrong',
-      fillBtn: function (n) { return 'Fill ' + n + (n === 1 ? ' field' : ' fields') },
-      attachCta: 'Attach the CV',
-      yourCvs: 'Your tailored CVs',
-      use: 'Use', active: 'Active',
-      genCv: 'Generate a CV for this offer', openEditor: 'Open the editor',
-      cvsEmpty: 'No CV yet. Generate one for this offer.',
-      yourApps: 'Your applications',
-      viewPipeline: 'View the full pipeline',
-      statusApplied: 'Applied', statusInterview: 'Interview', statusDraft: 'Draft', statusInProgress: 'In progress',
-      saved: 'Saved', applied: 'Applied',
-      activityEmpty: 'No activity yet.',
-      profileUsed: 'Profile used for autofill',
-      completeness: 'Profile completeness',
-      editProfile: 'Edit on JobSwiper',
-      pf: {
-        full_name: 'Full name', email: 'Email', phone: 'Phone', city: 'Location',
-        current_company: 'Current company', linkedin_url: 'LinkedIn', website: 'Website', headline: 'Headline',
-      },
-      profileEmpty: 'Sign in on JobSwiper to load your profile.',
-      yourPlan: 'Your plan',
-      planTitle: 'JobSwiper', planSub: 'Manage your plan on JobSwiper',
-      managePlan: 'Manage subscription',
-      qAutofills: 'Autofills', qUnlimited: 'unlimited',
-      signIn: 'Sign in to JobSwiper',
-      panelLabel: 'JobSwiper apply assistant',
-      timeoutTitle: 'Taking longer than expected',
-      timeoutBody: 'The form may have changed. Reopen it, or fill the remaining fields yourself.',
-      questionsHead: 'JobSwiper can draft answers',
-      draftBtn: 'Draft',
-      drafting: 'Drafting...',
-      answerInserted: 'Inserted, review it before you submit',
-      answerFailed: 'Could not draft, try again',
-      clHead: 'Cover letter',
-      clGenerate: 'Generate',
-      clGenerating: 'Writing...',
-      clInserted: 'Inserted, review it before you submit',
-      clFailed: 'Could not generate, try again',
-      aiLimit: 'Limit reached, upgrade on JobSwiper',
-      saveThisPage: 'Save this page',
-      saving: 'Saving...',
-      savedJob: function (t) { return 'Saved: ' + t },
-      saveNotJob: 'This does not look like a job posting',
-      saveFailed: 'Could not save this page',
-      disconnect: 'Disconnect',
-      widgetMenu: 'Options',
-      hideUntilVisit: 'Hide until next visit',
-      disableDomain: 'Disable on this domain',
-      disableAll: 'Disable on all pages',
-      offerHead: 'This job offer',
-      offerAnalyzing: 'Checking your match...',
-      offerMatch: 'Your match',
-      offerStrengths: 'You have',
-      offerGaps: 'Gaps to address',
-      offerNoProfile: 'Sign in and complete your profile on JobSwiper to see your match.',
+      panelLabel: 'JobSwiper panel', collapse: 'Close the panel',
+      widgetMenu: 'Panel options', hideUntilVisit: 'Hide until next visit',
+      disableDomain: 'Turn off on this site', disableAll: 'Turn off everywhere',
+      nav: { page: 'This page', jobs: 'My jobs', me: 'Me' },
+      whereOffer: 'Job offer', whereApply: 'Application',
+      loading: 'Reading this page...',
+      // offer
+      analyzing: 'Checking your match...',
+      tiers: { strong: 'Strong match', good: 'Good match', possible: 'Partial match', low: 'Weak match' },
+      mustHaves: function (a, b) { return a + ' of ' + b + ' must-haves met' },
+      reasonSeniority: 'Seniority gap for this role',
+      reasonEducation: 'Education requirement not met',
+      reasonExperience: 'Experience in a similar role',
+      coldStart: 'Complete your profile to get a real match score.',
+      missing: 'What is missing', have: 'What you already have',
+      quotedFrom: 'Quoted from the offer, missing from your profile',
+      offerSave: 'Save this offer', offerSaved: 'Saved', offerAlready: 'Already in your jobs',
+      offerTailor: 'Create a CV for this offer',
+      offerNoScore: 'Complete your profile to see how you match this offer.',
       offerError: 'Could not check this offer. Reopen the panel to try again.',
-      offerSave: 'Save this job',
-      offerSaved: 'Saved',
-      offerTailor: 'Tailor a CV for this job',
+      scoreFallback: 'Rough estimate: this offer has not been fully analyzed yet.',
+      // apply
+      change: 'Change', willWrite: 'What will be written', written: 'Written into the form',
+      fillBtn: function (n) { return n === 1 ? 'Fill 1 field' : 'Fill the ' + n + ' fields' },
+      filling: function (i, n) { return 'Filling ' + i + ' of ' + n }, stop: 'Stop',
+      filled: function (n) { return n === 1 ? '1 field filled' : n + ' fields filled' },
+      reviewThem: 'Read them over, then submit the form yourself.',
+      seeDetail: 'See detail', hideDetail: 'Hide',
+      yours: 'This stays yours', tagRequired: 'Required', tagSensitive: 'Sensitive', jump: 'Go',
+      sensitiveWhy: 'JobSwiper never fills sensitive fields for you.',
+      questions: "The form's questions", clLabel: 'Cover letter',
+      draft: 'Draft', redraft: 'Redo', drafting: 'Writing...',
+      drafted: 'Written, read it before you submit', draftFailed: 'Could not write it. Try again.',
+      aiLimit: 'AI limit reached. Upgrade on JobSwiper.',
+      attachCta: 'Attach the CV', attaching: 'Attaching...',
+      attached: function (n) { return n + ' attached' }, attachFailed: 'Could not attach the CV.',
+      submitYours: 'Submitting the form stays yours.',
+      noFields: 'Nothing to fill on this form yet.',
+      // none
+      noneTitle: 'No job offer on this page',
+      noneBody: 'Open a job offer or an application form: JobSwiper will show your match and offer to fill it in.',
+      saveAnyway: 'Save this page anyway', saving: 'Saving...',
+      saveNotJob: 'This page does not look like a job offer.',
+      savedJob: function (t) { return t ? 'Saved: ' + t : 'Saved' }, saveFailed: 'Could not save. Try again.',
+      resume: 'Pick up where you left off',
+      // gate
+      gateSignIn: 'Sign in to fill this form',
+      gateSignInBody: function (n, q) {
+        var bits = n + (n === 1 ? ' field' : ' fields')
+        if (q) bits += ' and ' + q + (q === 1 ? ' question' : ' questions')
+        return 'JobSwiper spotted ' + bits + ' on this page. Sign in to fill them with your profile.'
+      },
+      gateSignInPlain: 'Sign in to use JobSwiper on this page.',
+      gateSignInBtn: 'Sign in to JobSwiper',
+      gateProfile: 'Complete your profile first',
+      gateProfileBody: 'JobSwiper fills forms from your profile. Add your details once, then every application takes one click.',
+      gateProfileBtn: 'Complete my profile',
+      // jobs
+      jobsLabel: 'Your recent jobs', jobsEmpty: 'Nothing saved yet.',
+      viewPipeline: 'Open the full pipeline',
+      statusApplied: 'Applied', statusInterview: 'Interview', statusDraft: 'Draft', statusSaved: 'Saved',
+      // me
+      profileLabel: 'Your profile', completeness: 'Profile completed',
+      profileEmpty: 'No profile yet.', signIn: 'Sign in',
+      cvsLabel: 'Your CVs', cvsEmpty: 'No CV yet.', use: 'Use', active: 'In use',
+      newCv: 'Create a CV', editProfile: 'Edit my profile',
+      accountLabel: 'Account', managePlan: 'Manage my plan', signOut: 'Sign out of the extension',
+      signOutNote: 'Signs out the extension only, not the website.',
+      pf: {
+        full_name: 'Name', email: 'E-mail', phone: 'Phone', city: 'City',
+        current_company: 'Company', headline: 'Headline', linkedin_url: 'LinkedIn', website: 'Website',
+      },
     },
     fr: {
-      collapse: 'Réduire',
-      state: { detecting: 'Analyse…', ready: 'Prêt', filling: 'Remplissage', done: 'Terminé', empty: 'Aucun formulaire', error: 'Erreur', offer: 'Offre d\'emploi' },
-      nav: { apply: 'Postuler', cvs: 'CV', activity: 'Activité', profile: 'Profil', plan: 'Plan' },
-      applyWith: 'Candidature avec',
-      cvTailored: 'CV SUR-MESURE', cvBase: 'CV DE BASE',
-      tailoredFor: 'Adapté à cette offre', genericCv: 'CV générique',
-      change: 'Changer',
-      detected: function (n) { return n + (n === 1 ? ' champ détecté' : ' champs détectés') },
-      formRecognized: 'Formulaire de candidature reconnu',
-      profileMatched: 'Profil associé',
-      profileMatchedSub: 'Vos infos + le CV sur-mesure',
-      fillStep: 'Remplissage des champs',
-      filledStep: function (n) { return n + (n === 1 ? ' champ rempli' : ' champs remplis') },
-      attachStep: 'Joindre le CV',
-      submitStep: 'Prêt à soumettre',
-      submitSub: 'La soumission reste la vôtre',
-      filling: function (i, n) { return 'Remplissage ' + i + ' / ' + n },
-      stop: 'Stop',
-      attnHead: 'Ignorés, à vous de gérer',
-      reasonSensitive: 'SENSIBLE', reasonRequired: 'REQUIS',
-      jump: 'Aller',
-      doneMsgs: ['Nickel 🎯', 'C’est prêt ✨', 'Bien joué 👏'],
-      doneText: function (filled, skipped) {
-        var s = filled + (filled === 1 ? ' champ rempli' : ' champs remplis') + ', CV joint.'
-        if (skipped > 0) s += ' ' + skipped + (skipped === 1 ? ' champ vous attend' : ' champs vous attendent') + ' (voir ci-dessous).'
-        return s
-      },
-      emptyTitle: 'Aucun formulaire de candidature ici',
-      emptyBody: 'Ouvrez une page de candidature et JobSwiper proposera de la remplir.',
-      errorTitle: 'Une erreur est survenue',
-      fillBtn: function (n) { return 'Remplir ' + n + (n === 1 ? ' champ' : ' champs') },
-      attachCta: 'Joindre le CV',
-      yourCvs: 'Vos CV sur-mesure',
-      use: 'Utiliser', active: 'Actif',
-      genCv: 'Générer un CV pour cette offre', openEditor: 'Ouvrir l’éditeur',
-      cvsEmpty: 'Aucun CV pour l’instant. Générez-en un pour cette offre.',
-      yourApps: 'Vos candidatures',
-      viewPipeline: 'Voir le pipeline complet',
-      statusApplied: 'Postulé', statusInterview: 'Entretien', statusDraft: 'Brouillon', statusInProgress: 'En cours',
-      saved: 'Enregistrées', applied: 'Postulées',
-      activityEmpty: 'Aucune activité pour l’instant.',
-      profileUsed: 'Profil utilisé pour l’autofill',
-      completeness: 'Complétude du profil',
-      editProfile: 'Modifier sur JobSwiper',
-      pf: {
-        full_name: 'Nom complet', email: 'E-mail', phone: 'Téléphone', city: 'Localisation',
-        current_company: 'Société actuelle', linkedin_url: 'LinkedIn', website: 'Site web', headline: 'Titre',
-      },
-      profileEmpty: 'Connectez-vous à JobSwiper pour charger votre profil.',
-      yourPlan: 'Votre offre',
-      planTitle: 'JobSwiper', planSub: 'Gérez votre abonnement sur JobSwiper',
-      managePlan: 'Gérer l’abonnement',
-      qAutofills: 'Autofills', qUnlimited: 'illimité',
-      signIn: 'Se connecter à JobSwiper',
-      panelLabel: 'Assistant de candidature JobSwiper',
-      timeoutTitle: 'Cela prend plus de temps que prévu',
-      timeoutBody: 'Le formulaire a peut-être changé. Rouvrez-le, ou remplissez les champs restants vous-même.',
-      questionsHead: 'JobSwiper peut rédiger les réponses',
-      draftBtn: 'Rédiger',
-      drafting: 'Rédaction...',
-      answerInserted: 'Inséré, relisez avant d’envoyer',
-      answerFailed: 'Échec, réessayez',
-      clHead: 'Lettre de motivation',
-      clGenerate: 'Générer',
-      clGenerating: 'Rédaction...',
-      clInserted: 'Insérée, relisez avant d’envoyer',
-      clFailed: 'Échec, réessayez',
-      aiLimit: 'Limite atteinte, améliorez votre offre',
-      saveThisPage: 'Sauvegarder cette page',
-      saving: 'Sauvegarde...',
-      savedJob: function (t) { return 'Sauvegardé : ' + t },
-      saveNotJob: 'Ça ne ressemble pas à une offre d’emploi',
-      saveFailed: 'Impossible de sauvegarder cette page',
-      disconnect: 'Se déconnecter',
-      widgetMenu: 'Options',
-      hideUntilVisit: 'Masquer jusqu’à la prochaine visite',
-      disableDomain: 'Désactiver sur ce domaine',
-      disableAll: 'Désactiver sur toutes les pages',
-      offerHead: 'Cette offre',
-      offerAnalyzing: 'Analyse de votre match...',
-      offerMatch: 'Votre match',
-      offerStrengths: 'Vous avez',
-      offerGaps: 'Points à combler',
-      offerNoProfile: 'Connectez-vous et complétez votre profil sur JobSwiper pour voir votre match.',
-      offerError: 'Impossible d\'analyser cette offre. Rouvrez le panneau pour réessayer.',
-      offerSave: 'Sauvegarder cette offre',
-      offerSaved: 'Sauvegardé',
+      panelLabel: 'Panneau JobSwiper', collapse: 'Fermer le panneau',
+      widgetMenu: 'Options du panneau', hideUntilVisit: 'Masquer jusqu’à la prochaine visite',
+      disableDomain: 'Désactiver sur ce site', disableAll: 'Désactiver partout',
+      nav: { page: 'Cette page', jobs: 'Mes offres', me: 'Moi' },
+      whereOffer: 'Offre d’emploi', whereApply: 'Candidature',
+      loading: 'Lecture de la page...',
+      analyzing: 'Analyse de ton match...',
+      tiers: { strong: 'Très bon match', good: 'Bon match', possible: 'Match partiel', low: 'Match faible' },
+      mustHaves: function (a, b) { return a + ' critères essentiels sur ' + b },
+      reasonSeniority: 'Écart de séniorité sur ce poste',
+      reasonEducation: 'Niveau d’études non atteint',
+      reasonExperience: 'Expérience sur un poste similaire',
+      coldStart: 'Complète ton profil pour obtenir un vrai score de match.',
+      missing: 'Ce qui manque', have: 'Ce que tu as déjà',
+      quotedFrom: 'Cité de l’annonce, absent de ton profil',
+      offerSave: 'Sauvegarder cette offre', offerSaved: 'Sauvegardée', offerAlready: 'Déjà dans tes offres',
       offerTailor: 'Créer un CV pour cette offre',
+      offerNoScore: 'Complète ton profil pour voir ton match sur cette offre.',
+      offerError: 'Impossible d’analyser cette offre. Rouvre le panneau pour réessayer.',
+      scoreFallback: 'Estimation approximative : cette offre n’a pas encore été analysée en détail.',
+      change: 'Changer', willWrite: 'Ce qui va être écrit', written: 'Écrit dans le formulaire',
+      fillBtn: function (n) { return n === 1 ? 'Remplir 1 champ' : 'Remplir les ' + n + ' champs' },
+      filling: function (i, n) { return 'Remplissage ' + i + ' sur ' + n }, stop: 'Arrêter',
+      filled: function (n) { return n === 1 ? '1 champ rempli' : n + ' champs remplis' },
+      reviewThem: 'Relis-les, puis envoie le formulaire toi-même.',
+      seeDetail: 'Voir le détail', hideDetail: 'Masquer',
+      yours: 'Ça reste à toi', tagRequired: 'Obligatoire', tagSensitive: 'Sensible', jump: 'Aller',
+      sensitiveWhy: 'JobSwiper ne remplit jamais les champs sensibles à ta place.',
+      questions: 'Questions du formulaire', clLabel: 'Lettre de motivation',
+      draft: 'Rédiger', redraft: 'Refaire', drafting: 'Rédaction...',
+      drafted: 'Rédigé, relis avant d’envoyer', draftFailed: 'Rédaction impossible. Réessaie.',
+      aiLimit: 'Limite IA atteinte. Passe à la version supérieure sur JobSwiper.',
+      attachCta: 'Joindre le CV', attaching: 'Ajout en cours...',
+      attached: function (n) { return n + ' joint' }, attachFailed: 'Impossible de joindre le CV.',
+      submitYours: 'L’envoi du formulaire reste à toi.',
+      noFields: 'Rien à remplir sur ce formulaire pour l’instant.',
+      noneTitle: 'Aucune offre sur cette page',
+      noneBody: 'Ouvre une annonce ou un formulaire de candidature : JobSwiper affichera ton match et proposera de le remplir.',
+      saveAnyway: 'Sauvegarder cette page quand même', saving: 'Enregistrement...',
+      saveNotJob: 'Cette page ne ressemble pas à une offre d’emploi.',
+      savedJob: function (t) { return t ? 'Sauvegardée : ' + t : 'Sauvegardée' }, saveFailed: 'Échec de l’enregistrement. Réessaie.',
+      resume: 'Reprendre où tu en étais',
+      gateSignIn: 'Connecte-toi pour remplir ce formulaire',
+      gateSignInBody: function (n, q) {
+        var bits = n + (n === 1 ? ' champ' : ' champs')
+        if (q) bits += ' et ' + q + (q === 1 ? ' question' : ' questions')
+        return 'JobSwiper a repéré ' + bits + ' sur cette page. Connecte-toi pour les remplir avec ton profil.'
+      },
+      gateSignInPlain: 'Connecte-toi pour utiliser JobSwiper sur cette page.',
+      gateSignInBtn: 'Se connecter à JobSwiper',
+      gateProfile: 'Complète d’abord ton profil',
+      gateProfileBody: 'JobSwiper remplit les formulaires depuis ton profil. Renseigne-le une fois, et chaque candidature tient en un clic.',
+      gateProfileBtn: 'Compléter mon profil',
+      jobsLabel: 'Tes offres récentes', jobsEmpty: 'Rien de sauvegardé pour l’instant.',
+      viewPipeline: 'Ouvrir le pipeline complet',
+      statusApplied: 'Postulé', statusInterview: 'Entretien', statusDraft: 'Brouillon', statusSaved: 'Sauvegardée',
+      profileLabel: 'Ton profil', completeness: 'Profil complété',
+      profileEmpty: 'Pas encore de profil.', signIn: 'Se connecter',
+      cvsLabel: 'Tes CV', cvsEmpty: 'Pas encore de CV.', use: 'Utiliser', active: 'Utilisé',
+      newCv: 'Créer un CV', editProfile: 'Modifier mon profil',
+      accountLabel: 'Compte', managePlan: 'Gérer mon abonnement', signOut: 'Déconnecter l’extension',
+      signOutNote: 'Déconnecte l’extension seulement, pas le site.',
+      pf: {
+        full_name: 'Nom', email: 'E-mail', phone: 'Téléphone', city: 'Ville',
+        current_company: 'Entreprise', headline: 'Titre', linkedin_url: 'LinkedIn', website: 'Site web',
+      },
     },
     es: {
-      collapse: 'Ocultar',
-      state: { detecting: 'Analizando…', ready: 'Listo', filling: 'Rellenando', done: 'Hecho', empty: 'Sin formulario', error: 'Error', offer: 'Oferta de empleo' },
-      nav: { apply: 'Postular', cvs: 'CV', activity: 'Actividad', profile: 'Perfil', plan: 'Plan' },
-      applyWith: 'Postulando con',
-      cvTailored: 'CV A MEDIDA', cvBase: 'CV BASE',
-      tailoredFor: 'Adaptado a esta oferta', genericCv: 'CV genérico',
-      change: 'Cambiar',
-      detected: function (n) { return n + (n === 1 ? ' campo detectado' : ' campos detectados') },
-      formRecognized: 'Formulario de candidatura reconocido',
-      profileMatched: 'Perfil asociado',
-      profileMatchedSub: 'Tus datos + el CV a medida',
-      fillStep: 'Rellenando los campos',
-      filledStep: function (n) { return n + (n === 1 ? ' campo rellenado' : ' campos rellenados') },
-      attachStep: 'Adjuntar el CV',
-      submitStep: 'Listo para enviar',
-      submitSub: 'El envío sigue siendo tuyo',
-      filling: function (i, n) { return 'Rellenando ' + i + ' / ' + n },
-      stop: 'Parar',
-      attnHead: 'Omitidos, a tu cargo',
-      reasonSensitive: 'SENSIBLE', reasonRequired: 'OBLIGATORIO',
-      jump: 'Ir',
-      doneMsgs: ['Listo 🎯', 'Ya está ✨', 'Bien hecho 👏'],
-      doneText: function (filled, skipped) {
-        var s = filled + (filled === 1 ? ' campo rellenado' : ' campos rellenados') + ', CV adjuntado.'
-        if (skipped > 0) s += ' ' + skipped + (skipped === 1 ? ' campo te espera' : ' campos te esperan') + ' (ver abajo).'
-        return s
-      },
-      emptyTitle: 'Aquí no hay formulario de candidatura',
-      emptyBody: 'Abre una página de candidatura y JobSwiper propondrá rellenarla.',
-      errorTitle: 'Algo salió mal',
-      fillBtn: function (n) { return 'Rellenar ' + n + (n === 1 ? ' campo' : ' campos') },
-      attachCta: 'Adjuntar el CV',
-      yourCvs: 'Tus CV a medida',
-      use: 'Usar', active: 'Activo',
-      genCv: 'Generar un CV para esta oferta', openEditor: 'Abrir el editor',
-      cvsEmpty: 'Aún no hay CV. Genera uno para esta oferta.',
-      yourApps: 'Tus candidaturas',
-      viewPipeline: 'Ver el pipeline completo',
-      statusApplied: 'Postulado', statusInterview: 'Entrevista', statusDraft: 'Borrador', statusInProgress: 'En curso',
-      saved: 'Guardadas', applied: 'Postuladas',
-      activityEmpty: 'Aún no hay actividad.',
-      profileUsed: 'Perfil usado para el autofill',
-      completeness: 'Completitud del perfil',
-      editProfile: 'Editar en JobSwiper',
-      pf: {
-        full_name: 'Nombre completo', email: 'Correo', phone: 'Teléfono', city: 'Ubicación',
-        current_company: 'Empresa actual', linkedin_url: 'LinkedIn', website: 'Sitio web', headline: 'Titular',
-      },
-      profileEmpty: 'Inicia sesión en JobSwiper para cargar tu perfil.',
-      yourPlan: 'Tu plan',
-      planTitle: 'JobSwiper', planSub: 'Gestiona tu plan en JobSwiper',
-      managePlan: 'Gestionar suscripción',
-      qAutofills: 'Autofills', qUnlimited: 'ilimitado',
-      signIn: 'Iniciar sesión en JobSwiper',
-      panelLabel: 'Asistente de candidatura JobSwiper',
-      timeoutTitle: 'Está tardando más de lo esperado',
-      timeoutBody: 'El formulario puede haber cambiado. Vuelve a abrirlo, o rellena los campos restantes tú mismo.',
-      questionsHead: 'JobSwiper puede redactar respuestas',
-      draftBtn: 'Redactar',
-      drafting: 'Redactando...',
-      answerInserted: 'Insertado, revísalo antes de enviar',
-      answerFailed: 'No se pudo redactar, inténtalo de nuevo',
-      clHead: 'Carta de presentación',
-      clGenerate: 'Generar',
-      clGenerating: 'Redactando...',
-      clInserted: 'Insertada, revísala antes de enviar',
-      clFailed: 'No se pudo generar, inténtalo de nuevo',
-      aiLimit: 'Límite alcanzado, mejora tu plan',
-      saveThisPage: 'Guardar esta página',
-      saving: 'Guardando...',
-      savedJob: function (t) { return 'Guardado: ' + t },
-      saveNotJob: 'Esto no parece una oferta de empleo',
-      saveFailed: 'No se pudo guardar esta página',
-      disconnect: 'Cerrar sesión',
-      widgetMenu: 'Opciones',
-      hideUntilVisit: 'Ocultar hasta la próxima visita',
-      disableDomain: 'Desactivar en este dominio',
-      disableAll: 'Desactivar en todas las páginas',
-      offerHead: 'Esta oferta',
-      offerAnalyzing: 'Analizando tu match...',
-      offerMatch: 'Tu match',
-      offerStrengths: 'Tienes',
-      offerGaps: 'Puntos a mejorar',
-      offerNoProfile: 'Inicia sesión y completa tu perfil en JobSwiper para ver tu match.',
-      offerError: 'No se pudo analizar esta oferta. Vuelve a abrir el panel para reintentar.',
-      offerSave: 'Guardar esta oferta',
-      offerSaved: 'Guardado',
+      panelLabel: 'Panel JobSwiper', collapse: 'Cerrar el panel',
+      widgetMenu: 'Opciones del panel', hideUntilVisit: 'Ocultar hasta la próxima visita',
+      disableDomain: 'Desactivar en este sitio', disableAll: 'Desactivar en todas partes',
+      nav: { page: 'Esta página', jobs: 'Mis ofertas', me: 'Yo' },
+      whereOffer: 'Oferta de empleo', whereApply: 'Candidatura',
+      loading: 'Leyendo la página...',
+      analyzing: 'Analizando tu match...',
+      tiers: { strong: 'Match muy bueno', good: 'Buen match', possible: 'Match parcial', low: 'Match bajo' },
+      mustHaves: function (a, b) { return a + ' requisitos imprescindibles de ' + b },
+      reasonSeniority: 'Diferencia de senioridad para este puesto',
+      reasonEducation: 'Nivel de estudios no alcanzado',
+      reasonExperience: 'Experiencia en un puesto similar',
+      coldStart: 'Completa tu perfil para obtener un match real.',
+      missing: 'Lo que falta', have: 'Lo que ya tienes',
+      quotedFrom: 'Citado de la oferta, ausente de tu perfil',
+      offerSave: 'Guardar esta oferta', offerSaved: 'Guardada', offerAlready: 'Ya está en tus ofertas',
       offerTailor: 'Crear un CV para esta oferta',
+      offerNoScore: 'Completa tu perfil para ver tu match con esta oferta.',
+      offerError: 'No se pudo analizar esta oferta. Vuelve a abrir el panel para reintentar.',
+      scoreFallback: 'Estimación aproximada: esta oferta aún no se ha analizado en detalle.',
+      change: 'Cambiar', willWrite: 'Lo que se va a escribir', written: 'Escrito en el formulario',
+      fillBtn: function (n) { return n === 1 ? 'Rellenar 1 campo' : 'Rellenar los ' + n + ' campos' },
+      filling: function (i, n) { return 'Rellenando ' + i + ' de ' + n }, stop: 'Parar',
+      filled: function (n) { return n === 1 ? '1 campo rellenado' : n + ' campos rellenados' },
+      reviewThem: 'Revísalos y envía el formulario tú mismo.',
+      seeDetail: 'Ver el detalle', hideDetail: 'Ocultar',
+      yours: 'Esto queda para ti', tagRequired: 'Obligatorio', tagSensitive: 'Sensible', jump: 'Ir',
+      sensitiveWhy: 'JobSwiper nunca rellena campos sensibles por ti.',
+      questions: 'Preguntas del formulario', clLabel: 'Carta de motivación',
+      draft: 'Redactar', redraft: 'Rehacer', drafting: 'Redactando...',
+      drafted: 'Redactado, revísalo antes de enviar', draftFailed: 'No se pudo redactar. Reintenta.',
+      aiLimit: 'Límite de IA alcanzado. Mejora tu plan en JobSwiper.',
+      attachCta: 'Adjuntar el CV', attaching: 'Adjuntando...',
+      attached: function (n) { return n + ' adjuntado' }, attachFailed: 'No se pudo adjuntar el CV.',
+      submitYours: 'El envío del formulario queda para ti.',
+      noFields: 'Nada que rellenar en este formulario por ahora.',
+      noneTitle: 'No hay ninguna oferta en esta página',
+      noneBody: 'Abre una oferta o un formulario de candidatura: JobSwiper mostrará tu match y propondrá rellenarlo.',
+      saveAnyway: 'Guardar esta página de todos modos', saving: 'Guardando...',
+      saveNotJob: 'Esta página no parece una oferta de empleo.',
+      savedJob: function (t) { return t ? 'Guardada: ' + t : 'Guardada' }, saveFailed: 'No se pudo guardar. Reintenta.',
+      resume: 'Retoma donde lo dejaste',
+      gateSignIn: 'Inicia sesión para rellenar este formulario',
+      gateSignInBody: function (n, q) {
+        var bits = n + (n === 1 ? ' campo' : ' campos')
+        if (q) bits += ' y ' + q + (q === 1 ? ' pregunta' : ' preguntas')
+        return 'JobSwiper ha detectado ' + bits + ' en esta página. Inicia sesión para rellenarlos con tu perfil.'
+      },
+      gateSignInPlain: 'Inicia sesión para usar JobSwiper en esta página.',
+      gateSignInBtn: 'Iniciar sesión en JobSwiper',
+      gateProfile: 'Completa primero tu perfil',
+      gateProfileBody: 'JobSwiper rellena los formularios desde tu perfil. Complétalo una vez y cada candidatura será un clic.',
+      gateProfileBtn: 'Completar mi perfil',
+      jobsLabel: 'Tus ofertas recientes', jobsEmpty: 'Nada guardado por ahora.',
+      viewPipeline: 'Abrir el pipeline completo',
+      statusApplied: 'Postulado', statusInterview: 'Entrevista', statusDraft: 'Borrador', statusSaved: 'Guardada',
+      profileLabel: 'Tu perfil', completeness: 'Perfil completado',
+      profileEmpty: 'Aún no hay perfil.', signIn: 'Iniciar sesión',
+      cvsLabel: 'Tus CV', cvsEmpty: 'Aún no hay CV.', use: 'Usar', active: 'En uso',
+      newCv: 'Crear un CV', editProfile: 'Editar mi perfil',
+      accountLabel: 'Cuenta', managePlan: 'Gestionar mi plan', signOut: 'Cerrar sesión de la extensión',
+      signOutNote: 'Cierra la sesión de la extensión, no la del sitio.',
+      pf: {
+        full_name: 'Nombre', email: 'Correo', phone: 'Teléfono', city: 'Ciudad',
+        current_company: 'Empresa', headline: 'Titular', linkedin_url: 'LinkedIn', website: 'Sitio web',
+      },
     },
   }
 
@@ -359,7 +310,7 @@
     if (typeof b.command === 'function') { try { b.command(name, arg) } catch (e) { /* noop */ } return }
     if (typeof b[name] === 'function') { try { b[name](arg) } catch (e) { /* noop */ } }
   }
-  var busOffs = []  // unsubscribe fns so a teardown does not leak duplicate handlers
+  var busOffs = []
   function bindBus(handlers) {
     var tries = 0
     ;(function tryBind() {
@@ -376,52 +327,220 @@
     busOffs = []
   }
 
-  // ---- styles (ported from the validated prototype; :root -> :host) ----------
+  // ---- styles ----------------------------------------------------------------
   var CSS = [
     ':host{',
-    '--blue:#0064be;--blue-hover:#00539d;--blue-050:#eaf2fb;--ink:#18181b;--muted:#6b6b73;--faint:#9a9aa2;',
-    '--bg:#eef1f5;--surface:#fff;--surface-2:#f7f8fa;--border:#e6e7ea;--border-strong:#d7d8dd;',
-    '--emerald:#059669;--emerald-bg:#ecfdf5;--sunset:#c26a26;--sunset-bg:#fbf1e8;--danger:#dc2626;',
-    '--shadow:0 6px 24px rgba(15,23,42,.10),0 0 0 1px rgba(15,23,42,.04);',
-    'all:initial;font-family:"Nunito",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;',
+    '--ink:#101014;--muted:#5f5f68;--faint:#9695a0;',
+    '--line:#e6e6ea;--line-soft:#f0f0f3;--sunk:#f7f7f9;--surface:#fff;',
+    '--blue:#0064be;--blue-ink:#004f97;--blue-wash:#eaf2fb;',
+    '--ok:#047857;--ok-wash:#e9f6f0;--warn:#a35a09;--warn-wash:#fbf1e4;--bad:#c0271f;--bad-wash:#fbecea;',
+    '--r1:8px;',
+    'all:initial;font-family:"JobSwiperNunito",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;',
     '}',
     '@media (prefers-color-scheme: dark){:host{',
-    '--blue:#4c9be8;--blue-hover:#6cb0f0;--blue-050:rgba(76,155,232,.14);--ink:#f2f2f4;--muted:#a1a1aa;--faint:#7c7c85;',
-    '--bg:#0e0f12;--surface:#191a1e;--surface-2:#1f2126;--border:#2a2c32;--border-strong:#34363d;',
-    '--emerald:#34d399;--emerald-bg:rgba(16,185,129,.14);--sunset:#e0975a;--sunset-bg:rgba(212,130,63,.14);--danger:#f87171;',
-    '--shadow:0 8px 30px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.06);',
+    '--ink:#f3f3f5;--muted:#a5a5ae;--faint:#7d7d87;',
+    '--line:#2b2d33;--line-soft:#232529;--sunk:#1e2024;--surface:#17181c;',
+    '--blue:#5aa3ea;--blue-ink:#7cb8f2;--blue-wash:rgba(90,163,234,.15);',
+    '--ok:#34d399;--ok-wash:rgba(52,211,153,.14);--warn:#e0975a;--warn-wash:rgba(224,151,90,.15);',
+    '--bad:#f87171;--bad-wash:rgba(248,113,113,.15);',
     '}}',
-    ':host([data-theme="light"]){',
-    '--blue:#0064be;--blue-hover:#00539d;--blue-050:#eaf2fb;--ink:#18181b;--muted:#6b6b73;--faint:#9a9aa2;',
-    '--bg:#eef1f5;--surface:#fff;--surface-2:#f7f8fa;--border:#e6e7ea;--border-strong:#d7d8dd;',
-    '--emerald:#059669;--emerald-bg:#ecfdf5;--sunset:#c26a26;--sunset-bg:#fbf1e8;--danger:#dc2626;',
-    '--shadow:0 6px 24px rgba(15,23,42,.10),0 0 0 1px rgba(15,23,42,.04);',
-    '}',
-    ':host([data-theme="dark"]){',
-    '--blue:#4c9be8;--blue-hover:#6cb0f0;--blue-050:rgba(76,155,232,.14);--ink:#f2f2f4;--muted:#a1a1aa;--faint:#7c7c85;',
-    '--bg:#0e0f12;--surface:#191a1e;--surface-2:#1f2126;--border:#2a2c32;--border-strong:#34363d;',
-    '--emerald:#34d399;--emerald-bg:rgba(16,185,129,.14);--sunset:#e0975a;--sunset-bg:rgba(212,130,63,.14);--danger:#f87171;',
-    '--shadow:0 8px 30px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.06);',
-    '}',
     '*{margin:0;padding:0;box-sizing:border-box;}',
+    // The shadow host carries an inline `all:initial` (page-style isolation),
+    // which outranks the :host rule above and would reset the family back to the
+    // browser default. Set it again on every root the shadow tree actually
+    // renders, where nothing inline can beat it.
+    '.sb,.widget,.w-menu{font-family:"JobSwiperNunito",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;}',
     'button,input{font-family:inherit;}',
-    '.sb{position:fixed;top:14px;right:14px;bottom:14px;width:360px;max-width:calc(100vw - 28px);',
-    'background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);',
-    'display:flex;flex-direction:column;overflow:hidden;color:var(--ink);',
-    'font-size:14px;line-height:1.4;-webkit-font-smoothing:antialiased;',
-    'transition:transform .28s cubic-bezier(.4,0,.2,1);z-index:2147483000;}',
-    '.sb.collapsed{transform:translateX(384px);}',
-    // Floating, draggable launcher shown when the panel is collapsed.
+
+    // shell: flush against the viewport edge, full height, no radius, no float
+    '.sb{position:fixed;top:0;right:0;bottom:0;width:' + PANEL_W + 'px;max-width:100vw;',
+    'background:var(--surface);border-left:1px solid var(--line);color:var(--ink);',
+    'display:flex;flex-direction:column;overflow:hidden;font-size:13px;line-height:1.45;',
+    '-webkit-font-smoothing:antialiased;transition:transform .26s cubic-bezier(.4,0,.2,1);',
+    'z-index:2147483000;}',
+    '.sb.collapsed{transform:translateX(' + (PANEL_W + 4) + 'px);}',
+
+    // header
+    '.head{display:flex;align-items:center;gap:8px;padding:0 14px;height:48px;flex:none;border-bottom:1px solid var(--line-soft);}',
+    '.head img{width:18px;height:18px;border-radius:4px;display:block;}',
+    '.mark{font-weight:800;font-size:14px;letter-spacing:-.015em;}',
+    '.mark i{color:var(--blue);font-style:normal;}',
+    '.head .x{margin-left:auto;width:26px;height:26px;border:none;background:none;display:grid;place-items:center;',
+    'border-radius:6px;color:var(--faint);cursor:pointer;}',
+    '.head .x:hover{background:var(--sunk);color:var(--ink);}',
+    '.head .x svg{width:15px;height:15px;}',
+
+    '.scroll{flex:1;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;}',
+    '.body{padding:14px;display:flex;flex-direction:column;gap:16px;flex:1;}',
+    '.body.mid{padding-top:46px;gap:14px;}',
+    '.blk{min-width:0;}',
+
+    '.where{font-size:11.5px;font-weight:700;color:var(--faint);}',
+    '.job{margin-top:6px;}',
+    '.job h1{font-size:15.5px;font-weight:800;line-height:1.28;letter-spacing:-.01em;}',
+    '.job p{font-size:12.5px;font-weight:600;color:var(--muted);margin-top:2px;}',
+    '.lbl{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);margin-bottom:7px;}',
+    '.note{font-size:12.5px;font-weight:600;color:var(--muted);line-height:1.55;}',
+    '.mini{font-size:11.5px;font-weight:700;color:var(--faint);}',
+
+    // score
+    '.score{display:flex;align-items:baseline;gap:8px;}',
+    '.score b{font-size:31px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em;}',
+    '.score span{font-size:13px;font-weight:800;}',
+    '.score em{margin-left:auto;font-style:normal;font-size:11.5px;font-weight:700;color:var(--faint);}',
+    '.bar{height:5px;border-radius:3px;background:var(--line-soft);overflow:hidden;margin-top:9px;}',
+    '.bar > i{display:block;height:100%;border-radius:3px;transition:width .3s ease;}',
+    '.t-strong b,.t-strong span{color:var(--ok);}.t-strong .bar>i{background:var(--ok);}',
+    '.t-good b,.t-good span{color:var(--blue);}.t-good .bar>i{background:var(--blue);}',
+    '.t-possible b,.t-possible span{color:var(--warn);}.t-possible .bar>i{background:var(--warn);}',
+    '.t-low b,.t-low span{color:var(--bad);}.t-low .bar>i{background:var(--bad);}',
+    '.quote{font-size:12.5px;font-weight:700;line-height:1.5;}',
+    '.src{font-size:11px;font-weight:700;color:var(--faint);margin-top:4px;}',
+
+    '.chips{display:flex;flex-wrap:wrap;gap:5px;}',
+    '.chip{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;max-width:100%;',
+    'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.chip.gap{background:var(--warn-wash);color:var(--warn);}',
+    '.chip.have{background:var(--ok-wash);color:var(--ok);}',
+
+    // cv line
+    '.cv{display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:700;}',
+    '.cv .doc{width:15px;height:15px;color:var(--blue);flex:none;}',
+    '.cv .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;}',
+    '.cv .act-link{margin-left:auto;flex:none;color:var(--blue);font-weight:800;font-size:12px;',
+    'background:none;border:none;cursor:pointer;padding:0;}',
+    '.cv .act-link:hover{text-decoration:underline;}',
+    '.cv .tk{margin-left:auto;flex:none;color:var(--ok);font-weight:800;}',
+
+    // field list (label + the value that will be written)
+    '.fields{display:flex;flex-direction:column;}',
+    '.f{display:flex;gap:10px;padding:7px 0;border-top:1px solid var(--line-soft);align-items:baseline;}',
+    '.f:first-child{border-top:none;}',
+    '.f .k{flex:0 0 33%;font-size:11.5px;font-weight:700;color:var(--muted);}',
+    '.f .v{flex:1;font-size:12.5px;font-weight:700;word-break:break-word;min-width:0;}',
+    '.f .s{flex:none;width:14px;text-align:right;font-size:12px;font-weight:800;color:var(--ok);}',
+
+    // fold (post-fill summary)
+    '.fold{display:flex;align-items:center;justify-content:flex-start;gap:9px;width:100%;border:none;',
+    'background:none;font-family:inherit;cursor:pointer;padding:0;text-align:left;color:inherit;}',
+    '.fold .tk{width:17px;height:17px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;flex:none;}',
+    '.fold .tk svg{width:10px;height:10px;}',
+    '.fold b{font-size:13px;font-weight:800;}',
+    '.fold .more{margin-left:auto;font-size:11.5px;font-weight:800;color:var(--blue);display:flex;align-items:center;gap:3px;}',
+    '.fold .more svg{width:12px;height:12px;transition:transform .18s ease;}',
+    '.fold.open .more svg{transform:rotate(180deg);}',
+    '.sub{font-size:12.5px;font-weight:600;color:var(--muted);margin-top:4px;}',
+
+    // progress
+    '.prog{height:5px;border-radius:3px;background:var(--line-soft);overflow:hidden;margin-top:9px;}',
+    '.prog > i{display:block;height:100%;width:0;background:var(--blue);border-radius:3px;transition:width .3s ease;}',
+    '.prog-meta{display:flex;justify-content:space-between;align-items:baseline;font-size:11.5px;font-weight:700;',
+    'color:var(--muted);margin-top:6px;font-variant-numeric:tabular-nums;}',
+    '.prog-meta button{border:none;background:none;font-family:inherit;font-size:11.5px;font-weight:800;',
+    'color:var(--bad);cursor:pointer;padding:0;}',
+
+    // "this stays yours"
+    '.you{display:flex;flex-direction:column;}',
+    '.y{display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line-soft);}',
+    '.y:first-child{border-top:none;}',
+    '.y .n{flex:1;min-width:0;font-size:12.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;flex:none;}',
+    '.tag.req{background:var(--warn-wash);color:var(--warn);}',
+    '.tag.sens{background:var(--sunk);color:var(--muted);}',
+    '.y button.go{flex:none;border:none;background:none;color:var(--blue);font-family:inherit;font-weight:800;',
+    'font-size:11.5px;cursor:pointer;padding:0;}',
+    '.y button.go:hover{text-decoration:underline;}',
+
+    // questions
+    '.q{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line-soft);}',
+    '.q:first-child{border-top:none;}',
+    '.q .txt{flex:1;min-width:0;font-size:12.5px;font-weight:600;line-height:1.4;}',
+    '.q .st{display:block;font-size:11.5px;font-weight:700;margin-top:3px;color:var(--muted);}',
+    '.q .st.ok{color:var(--ok);}',
+    '.q .st.err{color:var(--bad);}',
+    '.btn-s{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--blue);font-family:inherit;',
+    'font-weight:800;font-size:11.5px;padding:5px 10px;border-radius:var(--r1);cursor:pointer;min-width:62px;',
+    'display:inline-flex;align-items:center;justify-content:center;gap:5px;}',
+    '.btn-s:hover{background:var(--blue-wash);border-color:var(--blue-wash);}',
+    '.btn-s:disabled{opacity:.55;cursor:default;}',
+    '.spin{width:11px;height:11px;border:2px solid var(--line);border-top-color:var(--blue);border-radius:50%;',
+    'animation:jsw-rot .6s linear infinite;flex:none;display:inline-block;}',
+    '@keyframes jsw-rot{to{transform:rotate(360deg)}}',
+    '.loading{display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:600;color:var(--muted);}',
+
+    // rows (jobs, cvs)
+    '.rows{display:flex;flex-direction:column;}',
+    '.r{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line-soft);',
+    'background:none;border-left:none;border-right:none;border-bottom:none;width:100%;text-align:left;',
+    'font-family:inherit;color:inherit;cursor:pointer;}',
+    '.r:first-child{border-top:none;}',
+    '.r:hover .m b{color:var(--blue);}',
+    '.r .m{flex:1;min-width:0;}',
+    '.r .m b{display:block;font-size:12.5px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.r .m span{display:block;font-size:11.5px;font-weight:600;color:var(--muted);margin-top:1px;',
+    'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}',
+    '.r .st{flex:none;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--sunk);color:var(--muted);}',
+    '.r .st.app{background:var(--blue-wash);color:var(--blue-ink);}',
+    '.r .st.itw{background:var(--ok-wash);color:var(--ok);}',
+    '.r .st.on{background:var(--blue);color:#fff;}',
+    '.r .chev{flex:none;width:13px;height:13px;color:var(--faint);}',
+
+    // meter (profile completeness)
+    '.meter{height:5px;border-radius:3px;background:var(--line-soft);overflow:hidden;margin-top:7px;}',
+    '.meter > i{display:block;height:100%;border-radius:3px;}',
+    '.kv{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-top:1px solid var(--line-soft);font-size:12.5px;}',
+    '.kv:first-of-type{border-top:none;}',
+    '.kv .k{color:var(--muted);font-weight:700;flex:none;}',
+    '.kv .v{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;}',
+
+    '.empty h2{font-size:14.5px;font-weight:800;line-height:1.35;}',
+    '.empty p{font-size:12.5px;font-weight:600;color:var(--muted);margin-top:6px;line-height:1.55;}',
+
+    // action bar
+    '.act{position:sticky;bottom:0;background:var(--surface);display:flex;flex-direction:column;gap:8px;padding:12px 14px 14px;}',
+    '.act:empty{display:none;}',
+    '.act.floats{box-shadow:0 -12px 14px -12px rgba(16,16,20,.18);}',
+    '.btn{border:none;border-radius:var(--r1);font-family:inherit;font-weight:800;font-size:13px;padding:11px;',
+    'cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;text-decoration:none;width:100%;}',
+    '.btn svg{width:15px;height:15px;flex:none;}',
+    '.btn-p{background:var(--blue);color:#fff;}',
+    '.btn-p:hover{background:var(--blue-ink);}',
+    '.btn-p:disabled{opacity:.55;cursor:default;}',
+    '.btn-g{background:var(--surface);color:var(--ink);border:1px solid var(--line);}',
+    '.btn-g:hover{background:var(--sunk);}',
+    '.btn.inline{width:auto;align-self:flex-start;}',
+    '.foot{font-size:11.5px;font-weight:700;color:var(--faint);text-align:center;}',
+    '.foot.left{text-align:left;}',
+    '.status{font-size:12px;font-weight:700;color:var(--muted);}',
+    '.status.err{color:var(--bad);}',
+    '.status.ok{color:var(--ok);}',
+
+    // nav
+    '.nav{flex:none;display:flex;border-top:1px solid var(--line);}',
+    '.nav button{flex:1;border:none;background:none;font-family:inherit;cursor:pointer;padding:8px 2px 9px;',
+    'display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--faint);font-size:10px;font-weight:800;',
+    'white-space:nowrap;overflow:hidden;}',
+    '.nav button svg{width:18px;height:18px;}',
+    '.nav button.on{color:var(--blue);}',
+    '.nav button:hover{color:var(--ink);}',
+    '.nav button.on:hover{color:var(--blue);}',
+
+    // floating launcher
     '.widget{position:fixed;right:16px;bottom:80px;z-index:2147483000;display:none;align-items:center;gap:2px;',
-    'background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);',
-    'padding:5px;cursor:pointer;user-select:none;-webkit-user-select:none;transition:box-shadow .15s,transform .1s;}',
+    'background:var(--surface);border:1px solid var(--line);border-radius:14px;',
+    'box-shadow:0 6px 24px rgba(15,23,42,.12),0 0 0 1px rgba(15,23,42,.04);',
+    'padding:5px;cursor:pointer;user-select:none;-webkit-user-select:none;transition:box-shadow .15s;}',
     '.sb.collapsed ~ .widget{display:inline-flex;}',
     '.widget.jsw-hidden{display:none !important;}',
     '.widget.dragging{transition:none;cursor:grabbing;}',
-    '.widget:hover{box-shadow:0 12px 34px rgba(15,23,42,.20),0 0 0 1px rgba(15,23,42,.05);}',
-    '.w-logo{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;pointer-events:none;}',
+    '.widget:hover{box-shadow:0 12px 34px rgba(15,23,42,.2),0 0 0 1px rgba(15,23,42,.05);}',
+    '.w-logo{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;flex:none;pointer-events:none;position:relative;}',
     '.w-logo img{width:26px;height:26px;display:block;}',
-    '.w-logo .dot{width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;display:grid;place-items:center;font-size:12px;font-weight:800;}',
+    '.w-logo .mono{font-size:12px;font-weight:800;color:var(--blue);}',
+    '.w-score{position:absolute;right:-6px;bottom:-4px;min-width:22px;height:17px;padding:0 4px;border-radius:999px;',
+    'font-size:10.5px;font-weight:800;color:#fff;display:none;align-items:center;justify-content:center;',
+    'font-variant-numeric:tabular-nums;border:2px solid var(--surface);}',
+    '.w-score.on{display:flex;}',
     '.w-grip{width:0;opacity:0;overflow:hidden;display:grid;grid-template-columns:repeat(2,4px);grid-auto-rows:4px;gap:3px;',
     'align-content:center;justify-content:center;flex:none;transition:width .15s ease,opacity .12s ease,margin .15s ease;cursor:grab;}',
     '.widget:hover .w-grip{width:15px;opacity:1;margin-right:3px;}',
@@ -430,178 +549,32 @@
     'border:2px solid var(--surface);display:none;place-items:center;cursor:pointer;padding:0;}',
     '.widget:hover .w-close{display:grid;}',
     '.w-close svg{width:9px;height:9px;}',
-    '.w-menu{position:fixed;z-index:2147483001;display:none;flex-direction:column;min-width:210px;',
-    'background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);padding:5px;}',
+    '.w-menu{position:fixed;z-index:2147483001;display:none;flex-direction:column;min-width:210px;max-width:calc(100vw - 24px);',
+    'background:var(--surface);border:1px solid var(--line);border-radius:12px;',
+    'box-shadow:0 6px 24px rgba(15,23,42,.12),0 0 0 1px rgba(15,23,42,.04);padding:5px;}',
     '.w-menu.open{display:flex;}',
-    '.w-menu button{text-align:left;border:none;background:none;font-family:inherit;font-size:13px;font-weight:600;color:var(--ink);',
-    'padding:10px 11px;border-radius:8px;cursor:pointer;white-space:nowrap;}',
-    '.w-menu button:hover{background:var(--surface-2);}',
-    '.sb-head{display:flex;align-items:center;gap:9px;padding:13px 14px;border-bottom:1px solid var(--border);}',
-    '.brand-logo{width:20px;height:20px;border-radius:6px;flex-shrink:0;display:block;object-fit:cover;}',
-    '.wordmark{font-weight:800;font-size:15px;letter-spacing:-.01em;color:var(--ink);}',
-    '.wordmark .b{color:var(--blue);}',
-    '.state-chip{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;',
-    'padding:4px 9px;border-radius:999px;background:var(--surface-2);color:var(--muted);}',
-    '.state-chip .sdot{width:7px;height:7px;border-radius:50%;background:var(--faint);}',
-    '.state-chip[data-s="ready"]{color:var(--blue);background:var(--blue-050);}',
-    '.state-chip[data-s="ready"] .sdot{background:var(--blue);}',
-    '.state-chip[data-s="detecting"]{color:var(--blue);background:var(--blue-050);}',
-    '.state-chip[data-s="detecting"] .sdot{background:var(--blue);animation:jsw-pulse 1s infinite;}',
-    '.state-chip[data-s="filling"]{color:var(--blue);background:var(--blue-050);}',
-    '.state-chip[data-s="filling"] .sdot{background:var(--blue);animation:jsw-pulse 1s infinite;}',
-    '.state-chip[data-s="done"]{color:var(--emerald);background:var(--emerald-bg);}',
-    '.state-chip[data-s="done"] .sdot{background:var(--emerald);}',
-    '.state-chip[data-s="error"]{color:var(--danger);background:var(--sunset-bg);}',
-    '.state-chip[data-s="error"] .sdot{background:var(--danger);}',
-    '@keyframes jsw-pulse{0%,100%{opacity:1}50%{opacity:.3}}',
-    '.icon-btn{border:none;background:none;cursor:pointer;color:var(--faint);width:28px;height:28px;border-radius:7px;display:grid;place-items:center;}',
-    '.icon-btn:hover{background:var(--surface-2);color:var(--ink);}',
-    '.views{flex:1;overflow-y:auto;overflow-x:hidden;}',
-    '.view{display:none;padding:14px;}',
-    '.view.active{display:block;animation:jsw-fade .2s ease;}',
-    '@keyframes jsw-fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}',
-    '.section-label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin:2px 0 8px;}',
-    '.ctx{display:flex;gap:11px;align-items:center;padding:11px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);}',
-    '.cv-thumb{width:42px;height:54px;border-radius:6px;background:linear-gradient(160deg,#dbeafe,#eff6ff);border:1px solid var(--border-strong);flex-shrink:0;position:relative;overflow:hidden;}',
-    '.cv-thumb::before{content:"";position:absolute;inset:7px 7px auto 7px;height:5px;border-radius:2px;background:var(--blue);opacity:.7;}',
-    '.cv-thumb::after{content:"";position:absolute;left:7px;right:14px;top:18px;height:3px;border-radius:2px;box-shadow:0 6px 0 rgba(100,100,110,.25),0 12px 0 rgba(100,100,110,.25),0 18px 0 rgba(100,100,110,.18);background:rgba(100,100,110,.25);}',
-    '.ctx-main{min-width:0;}',
-    '.ctx-tag{display:inline-block;font-size:10px;font-weight:800;color:var(--blue);background:var(--blue-050);padding:1px 6px;border-radius:5px;margin-bottom:3px;}',
-    '.ctx-title{font-weight:800;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}',
-    '.ctx-sub{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:2px;}',
-    '.ctx-sub a{color:var(--blue);text-decoration:none;font-weight:700;cursor:pointer;}',
-    '.feed{margin-top:14px;position:relative;}',
-    '.scan{display:none;height:3px;border-radius:2px;background:linear-gradient(90deg,transparent,var(--blue),transparent);background-size:40% 100%;background-repeat:no-repeat;animation:jsw-scan 1.1s infinite linear;margin-bottom:10px;}',
-    '.is-detecting .scan{display:block;}',
-    '@keyframes jsw-scan{0%{background-position:-40% 0}100%{background-position:140% 0}}',
-    '.step{display:flex;gap:10px;align-items:flex-start;padding:6px 0;}',
-    '.step .mk{width:20px;height:20px;border-radius:50%;flex-shrink:0;display:grid;place-items:center;font-size:11px;font-weight:800;border:2px solid var(--border-strong);color:var(--faint);background:var(--surface);margin-top:1px;}',
-    '.step .lbl{font-size:13px;font-weight:600;padding-top:2px;color:var(--ink);}',
-    '.step .lbl small{display:block;font-size:11.5px;color:var(--muted);font-weight:600;margin-top:1px;}',
-    '.step[data-st="done"] .mk{background:var(--emerald);border-color:var(--emerald);color:#fff;}',
-    '.step[data-st="active"] .mk{border-color:var(--blue);color:var(--blue);}',
-    '.step[data-st="active"] .mk .spin{width:9px;height:9px;border:2px solid var(--blue-050);border-top-color:var(--blue);border-radius:50%;animation:jsw-rot .6s linear infinite;}',
-    '.step[data-st="active"] .lbl{color:var(--ink);font-weight:700;}',
-    '.step[data-st="pending"]{opacity:.55;}',
-    '@keyframes jsw-rot{to{transform:rotate(360deg)}}',
-    '.prog-wrap{margin:8px 0 4px 30px;display:none;}',
-    '.is-filling .prog-wrap{display:block;}',
-    '.prog{height:6px;border-radius:4px;background:var(--surface-2);overflow:hidden;}',
-    '.prog > i{display:block;height:100%;width:0;background:var(--blue);border-radius:4px;transition:width .35s ease;}',
-    '.prog-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-weight:700;margin-top:5px;font-variant-numeric:tabular-nums;}',
-    '.stop{color:var(--danger);cursor:pointer;font-weight:800;}',
-    '.stop:hover{text-decoration:underline;}',
-    '.filled-list{margin:6px 0 2px 30px;display:flex;flex-direction:column;gap:3px;}',
-    '.fchip{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--muted);}',
-    '.fchip .fk{color:var(--ink);font-weight:700;}',
-    '.fchip .tick{color:var(--emerald);font-weight:800;}',
-    '.fchip.pending{opacity:.45;}',
-    '.fchip.pending .tick{color:var(--faint);}',
-    '.done-card{display:none;margin-top:12px;padding:13px;border-radius:12px;background:var(--emerald-bg);border:1px solid color-mix(in srgb, var(--emerald) 22%, transparent);}',
-    '.is-done .done-card{display:block;animation:jsw-fade .25s ease;}',
-    '.done-card b{font-size:14px;color:var(--ink);}',
-    '.done-card p{font-size:12.5px;color:var(--muted);font-weight:600;margin-top:3px;line-height:1.5;}',
-    '.msg-card{display:none;margin-top:14px;padding:14px;border-radius:12px;background:var(--surface-2);border:1px solid var(--border);}',
-    '.msg-card b{font-size:13.5px;color:var(--ink);}',
-    '.msg-card p{font-size:12.5px;color:var(--muted);font-weight:600;margin-top:4px;line-height:1.5;}',
-    '.is-empty .empty-card,.is-error .error-card{display:block;}',
-    '.is-empty .feed,.is-empty .attn,.is-empty .questions,.is-empty .done-card,.is-empty .cta-row,',
-    '.is-error .feed,.is-error .attn,.is-error .questions,.is-error .done-card{display:none;}',
-    // Job-offer view (viewing a listing, not applying): match score + skills.
-    '.is-offer .feed,.is-offer .scan,.is-offer .attn,.is-offer .questions,.is-offer #coverletter,',
-    '.is-offer .done-card,.is-offer .cta-row,.is-offer .empty-card,.is-offer .error-card{display:none;}',
-    '.is-offer .offer-card{display:block;}',
-    '.offer-card{display:none;margin-top:2px;animation:jsw-fade .2s ease;}',
-    '.offer-job{font-weight:800;font-size:14px;color:var(--ink);line-height:1.35;margin-bottom:12px;}',
-    '.offer-job small{display:block;font-size:12px;color:var(--muted);font-weight:600;margin-top:2px;}',
-    '.offer-loading{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:13px;font-weight:600;padding:6px 0 10px;}',
-    '.offer-loading .spin{width:14px;height:14px;border:2px solid var(--blue-050);border-top-color:var(--blue);border-radius:50%;animation:jsw-rot .6s linear infinite;flex:none;}',
-    '.offer-score{display:flex;align-items:center;gap:13px;padding:13px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);margin-bottom:12px;}',
-    '.score-ring{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;flex:none;font-weight:800;font-size:18px;color:#fff;font-variant-numeric:tabular-nums;}',
-    '.score-meta{min-width:0;}',
-    '.score-level{font-weight:800;font-size:14px;color:var(--ink);}',
-    '.score-sub{font-size:12px;color:var(--muted);font-weight:600;margin-top:2px;line-height:1.45;}',
-    '.offer-sec{margin-bottom:12px;}',
-    '.offer-sec-label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:6px;}',
-    '.chips-row{display:flex;flex-wrap:wrap;gap:5px;}',
-    '.chip-s{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;}',
-    '.chip-s.have{background:var(--emerald-bg);color:var(--emerald);}',
-    '.chip-s.gap{background:var(--sunset-bg);color:var(--sunset);}',
-    '.offer-note{font-size:12.5px;color:var(--muted);font-weight:600;line-height:1.5;padding:6px 0 12px;}',
-    '.offer-cta{display:flex;flex-direction:column;gap:8px;margin-top:4px;}',
-    '.questions{margin-top:14px;border:1px solid var(--border);border-radius:12px;overflow:hidden;}',
-    '.q-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:12px;font-weight:800;background:var(--surface-2);color:var(--ink);}',
-    '.q-head .spark{color:var(--blue);display:inline-flex;}',
-    '.q-row{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border-top:1px solid var(--border);font-size:12.5px;}',
-    '.q-label{flex:1;min-width:0;font-weight:600;color:var(--ink);line-height:1.35;}',
-    '.q-status{font-size:11px;font-weight:700;color:var(--muted);margin-top:3px;}',
-    '.q-status.ok{color:var(--emerald);}',
-    '.q-status.err{color:var(--danger);}',
-    '.q-draft{flex-shrink:0;border:1px solid var(--blue);background:var(--blue);color:#fff;font-family:inherit;font-weight:800;font-size:11px;padding:5px 10px;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;min-width:64px;justify-content:center;}',
-    '.q-draft:hover{background:var(--blue-hover);}',
-    '.q-draft:disabled{opacity:.6;cursor:default;}',
-    '.q-draft .qspin{width:10px;height:10px;border:2px solid rgba(255,255,255,.45);border-top-color:#fff;border-radius:50%;animation:jsw-rot .6s linear infinite;}',
-    '.attn{margin-top:14px;border:1px solid var(--border);border-radius:12px;overflow:hidden;}',
-    '.attn-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:12px;font-weight:800;background:var(--surface-2);color:var(--ink);}',
-    '.attn-row{display:flex;align-items:center;gap:8px;padding:8px 11px;border-top:1px solid var(--border);font-size:12.5px;font-weight:600;color:var(--ink);}',
-    '.attn-row .lock{color:var(--sunset);}',
-    '.attn-row .why{margin-left:auto;font-size:10.5px;color:var(--faint);font-weight:700;}',
-    '.attn-row.need .lock{color:var(--blue);}',
-    '.attn-row .jumpbtn{margin-left:8px;flex-shrink:0;border:1px solid var(--border-strong);background:var(--surface);color:var(--blue);font-family:inherit;font-weight:800;font-size:10.5px;padding:2px 8px;border-radius:6px;cursor:pointer;}',
-    '.attn-row .jumpbtn:hover{background:var(--blue-050);}',
-    '.cta-row{display:flex;flex-direction:column;gap:8px;margin-top:14px;}',
-    '.btn{border:none;border-radius:10px;font-family:inherit;font-weight:800;font-size:13px;padding:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:background .15s,border-color .15s;text-decoration:none;}',
-    '.btn-primary{background:var(--blue);color:#fff;}',
-    '.btn-primary:hover{background:var(--blue-hover);}',
-    '.btn-primary:disabled{opacity:.5;cursor:default;}',
-    '.btn-ghost{background:var(--surface);color:var(--ink);border:1px solid var(--border-strong);}',
-    '.btn-ghost:hover{background:var(--surface-2);}',
-    '.row{display:flex;gap:11px;align-items:center;padding:11px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px;background:var(--surface);}',
-    '.row:hover{border-color:var(--border-strong);}',
-    '.row.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset;}',
-    '.row-main{min-width:0;flex:1;}',
-    '.row-title{font-weight:800;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);}',
-    '.row-sub{font-size:11.5px;color:var(--muted);font-weight:600;margin-top:2px;}',
-    '.pill{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:999px;white-space:nowrap;}',
-    '.pill.applied{background:var(--blue-050);color:var(--blue);}',
-    '.pill.interview{background:var(--emerald-bg);color:var(--emerald);}',
-    '.pill.draft{background:var(--surface-2);color:var(--muted);}',
-    '.pill.use{background:var(--blue);color:#fff;}',
-    '.link{color:var(--blue);text-decoration:none;font-weight:800;font-size:12px;cursor:pointer;background:none;border:none;}',
-    '.link.block{display:block;text-align:center;margin-top:6px;}',
-    '.meter{height:6px;border-radius:4px;background:var(--surface-2);overflow:hidden;margin-top:6px;}',
-    '.meter > i{display:block;height:100%;border-radius:4px;}',
-    '.quota{padding:11px;border:1px solid var(--border);border-radius:12px;margin-bottom:8px;}',
-    '.quota-top{display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;color:var(--ink);}',
-    '.quota-top .n{color:var(--muted);font-variant-numeric:tabular-nums;}',
-    '.kv{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12.5px;}',
-    '.kv:last-of-type{border-bottom:none;}',
-    '.kv .k{color:var(--muted);font-weight:600;flex-shrink:0;}',
-    '.kv .v{font-weight:700;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;}',
-    '.nav{display:flex;border-top:1px solid var(--border);background:var(--surface);}',
-    '.nav button{flex:1;border:none;background:none;cursor:pointer;padding:9px 4px 8px;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--faint);font-family:inherit;font-size:9.5px;font-weight:800;letter-spacing:.02em;}',
-    '.nav button svg{width:19px;height:19px;}',
-    '.nav button.active{color:var(--blue);}',
-    '.nav button:hover{color:var(--ink);}',
-    '.nav button.active:hover{color:var(--blue);}',
-    '.muted-note{font-size:12px;color:var(--muted);font-weight:600;line-height:1.5;padding:2px 0 8px;}',
+    '.w-menu button{text-align:left;border:none;background:none;font-family:inherit;font-size:13px;font-weight:700;',
+    'color:var(--ink);padding:10px 11px;border-radius:8px;cursor:pointer;}',
+    '.w-menu button:hover{background:var(--sunk);}',
+
     '@media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important;}}',
-    '@media (max-width: 720px){.sb{left:14px;width:auto;}}',
+    '@media (max-width: 560px){.sb{width:100vw;border-left:none;}}',
   ].join('')
 
-  // ---- SVG icon fragments ----------------------------------------------------
+  // ---- icons -----------------------------------------------------------------
   var IC = {
-    chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>',
-    check: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l4 4L20 5"/></svg>',
-    plus: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
-    spark: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17z"/></svg>',
+    chevronR: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>',
+    chevronD: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>',
+    check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l4 4L20 5"/></svg>',
+    checkFat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l4 4L20 5"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/></svg>',
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
-    navApply: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l4 4L20 5"/></svg>',
-    navCv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6"/></svg>',
-    navActivity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>',
-    navProfile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
-    navPlan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.6 6.6L22 9l-5 4.6L18.4 21 12 17.3 5.6 21 7 13.6 2 9l7.4-.4z"/></svg>',
+    navPage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>',
+    navJobs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
+    navMe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
   }
+  var NAV_ICON = { page: IC.navPage, jobs: IC.navJobs, me: IC.navMe }
 
   // ---- utils -----------------------------------------------------------------
   function esc(s) {
@@ -610,112 +583,107 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
   }
   function clamp01(n) { return Math.max(0, Math.min(100, n)) }
+  function hostLabel() {
+    try { return (location.hostname || '').replace(/^www\./, '') } catch (e) { return '' }
+  }
+  // No host (file://, about:blank) must not leave a dangling separator.
+  function whereLine(label) {
+    var h = hostLabel()
+    return h ? label + ' · ' + h : label
+  }
+  // Same ladder as the app (75/50/30 -> strong/good/possible/low). Only used when
+  // the server did not send match_level; its value always wins so the extension
+  // and the dashboard can never disagree on a tier.
+  function tierOf(score) {
+    if (score >= 75) return 'strong'
+    if (score >= 50) return 'good'
+    if (score >= 30) return 'possible'
+    return 'low'
+  }
+  // The server builds its reason strings in English from the coverage engine.
+  // We localize the ones we recognize and drop the rest rather than showing
+  // English inside a French or Spanish panel. A verbatim requirement quote keeps
+  // the offer's own language, which is exactly why it is quoted.
+  var RE_MUSTS = /^(\d+) of (\d+) must-haves met$/
+  var RE_MISSING = /^Missing:\s*(.+)$/
+  var COLD_START = 'Complete your profile to get a real match score'
+  function oneLine(s) { return String(s || '').replace(/\s+/g, ' ').trim() }
 
-  // ---- markup ----------------------------------------------------------------
+  // ---- component state -------------------------------------------------------
+  var root = null, sbEl = null, bodyEl = null, actEl = null, scrollEl = null
+  var view = 'page'                 // page | jobs | me
+  var ctx = 'loading'               // loading | offer | apply | none | gate
+  var gateInfo = null               // { kind, message, href }
+  var applyPhase = 'idle'           // idle | filling | filled
+  var readyFields = [], readySkipped = [], readyQuestions = [], readyCL = null
+  var cvCtx = null                  // { name, tailored } from the ctx bus event
+  var filledCount = 0, detailOpen = false
+  var qRefs = [], clRef = null, fieldRefs = [], progRef = null, foldRef = null
+  var attachState = null            // null | 'attaching' | { name } | 'error'
+  var offer = { url: '', loaded: false, job: null, data: null, saved: false, pending: false }
+  var recentJobs = null
+  var userSetCollapse = false, iconOpenRequested = false
+  var fillWatchdog = null, urlWatch = null, lastHref = ''
+  var loaded = { jobs: false, me: false }
+  var widgetEl = null, wMenuEl = null, dragState = null, dragDocWired = false
+  var disabledAll = false, disabledDomains = {}, widgetPos = null
+  var HOST = (typeof location !== 'undefined' && location.hostname || '').toLowerCase()
+  var _mounted = false
+
+  function $(id) { return root ? root.getElementById(id) : null }
+
+  // ---- context resolution ----------------------------------------------------
+  // The page context is DERIVED from the same predicates the apply layer uses, so
+  // the panel can never sit on a state nobody drives (the old build-time
+  // "detecting" default could hang forever on a job-board page with no form).
+  function isApplyPage() {
+    var b = bus()
+    if (!b) return false
+    var direct = typeof b.isLikelyJobApplication === 'function' && b.isLikelyJobApplication()
+    var framed = typeof b.hasFrameApply === 'function' && b.hasFrameApply()
+    return !!(direct || framed)
+  }
+  function isRelevant() {
+    var b = bus()
+    return !!(b && typeof b.isRelevantSite === 'function' && b.isRelevantSite())
+  }
+  function resolveContext() {
+    if (gateInfo) return 'gate'
+    if (isApplyPage()) return 'apply'
+    if (isRelevant()) return 'offer'
+    return 'none'
+  }
+  function setContext(next, force) {
+    if (next === ctx && !force) return
+    ctx = next
+    if (view === 'page') renderPage()
+  }
+
+  // ---- render: shell ---------------------------------------------------------
   function shellHTML() {
     var T = t()
-    var logo = logoUrl()
-    var headLogo = logo ? '<img class="brand-logo" src="' + esc(logo) + '" alt="" width="20" height="20">' : ''
-    var widgetLogo = logo ? '<img src="' + esc(logo) + '" alt="" width="26" height="26">' : '<span class="dot">JS</span>'
+    var logo = assetUrl('icons/icon128.png')
+    var headLogo = logo ? '<img src="' + esc(logo) + '" alt="" width="18" height="18">' : ''
+    var widgetLogo = logo ? '<img src="' + esc(logo) + '" alt="" width="26" height="26">' : '<span class="mono">JS</span>'
+    var navBtns = ['page', 'jobs', 'me'].map(function (v) {
+      return '<button data-view="' + v + '"' + (v === 'page' ? ' class="on"' : '') + '>' + NAV_ICON[v] + esc(T.nav[v]) + '</button>'
+    }).join('')
     return (
       '<style>' + CSS + '</style>' +
       '<aside class="sb" id="sb" aria-label="' + esc(T.panelLabel) + '">' +
-        '<div class="sb-head">' +
-          headLogo +
-          '<span class="wordmark">Job<span class="b">Swiper</span></span>' +
-          '<span class="state-chip" id="chip" data-s="detecting" role="status" aria-live="polite" aria-atomic="true"><span class="sdot"></span><span id="chipText">' + esc(T.state.detecting) + '</span></span>' +
-          '<button class="icon-btn" id="collapseBtn" title="' + esc(T.collapse) + '" aria-label="' + esc(T.collapse) + '">' + IC.chevron + '</button>' +
+        '<div class="head">' + headLogo +
+          '<span class="mark">Job<i>Swiper</i></span>' +
+          '<button class="x" id="collapseBtn" title="' + esc(T.collapse) + '" aria-label="' + esc(T.collapse) + '">' + IC.chevronR + '</button>' +
         '</div>' +
-        '<div class="views">' +
-          // APPLY
-          '<section class="view active is-detecting" id="view-apply">' +
-            '<div class="section-label" id="applyLabel">' + esc(T.applyWith) + '</div>' +
-            '<div class="ctx" id="ctx">' +
-              '<div class="cv-thumb"></div>' +
-              '<div class="ctx-main">' +
-                '<span class="ctx-tag" id="ctxTag">' + esc(T.cvTailored) + '</span>' +
-                '<div class="ctx-title" id="ctxTitle">&nbsp;</div>' +
-                '<div class="ctx-sub" id="ctxSub"><a id="ctxChange">' + esc(T.change) + '</a></div>' +
-              '</div>' +
-            '</div>' +
-            '<div class="feed" id="feed">' +
-              '<div class="scan"></div>' +
-              '<div class="step" data-step="detect" data-st="pending"><div class="mk" id="detectMk">1</div><div class="lbl" id="detectLbl">' + esc(T.fillStep) + '</div></div>' +
-              '<div class="step" data-step="match" data-st="pending"><div class="mk">2</div><div class="lbl">' + esc(T.profileMatched) + '<small>' + esc(T.profileMatchedSub) + '</small></div></div>' +
-              '<div class="step" data-step="fill" data-st="pending"><div class="mk" id="fillMk">3</div><div class="lbl" id="fillLbl">' + esc(T.fillStep) + '</div></div>' +
-              '<div class="prog-wrap"><div class="prog" id="progEl" role="progressbar" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><i id="progBar"></i></div>' +
-                '<div class="prog-meta"><span id="progText">' + esc(T.filling(0, 0)) + '</span><span class="stop" id="stopBtn">■ ' + esc(T.stop) + '</span></div></div>' +
-              '<div class="filled-list" id="filledList"></div>' +
-              '<div class="step" data-step="attach" data-st="pending"><div class="mk">↑</div><div class="lbl" id="attachLbl">' + esc(T.attachStep) + '</div></div>' +
-              '<div class="step" data-step="submit" data-st="pending"><div class="mk">▷</div><div class="lbl">' + esc(T.submitStep) + '<small>' + esc(T.submitSub) + '</small></div></div>' +
-            '</div>' +
-            '<div class="done-card"><b id="doneTitle">' + esc(T.doneMsgs[0]) + '</b><p id="doneText"></p></div>' +
-            '<div class="msg-card empty-card"><b>' + esc(T.emptyTitle) + '</b><p>' + esc(T.emptyBody) + '</p></div>' +
-            '<div class="msg-card error-card"><b id="errorTitle">' + esc(T.errorTitle) + '</b><p id="errorText"></p></div>' +
-            '<div class="attn" id="attn" style="display:none"><div class="attn-head" id="attnHead">' + esc(T.attnHead) + '</div><div id="attnRows"></div></div>' +
-            '<div class="questions" id="questions" style="display:none"><div class="q-head" id="qHead"><span class="spark">' + IC.spark + '</span>' + esc(T.questionsHead) + '</div><div id="questionRows"></div></div>' +
-            '<div class="questions" id="coverletter" style="display:none"><div class="q-head" id="clHeadEl"><span class="spark">' + IC.spark + '</span>' + esc(T.clHead) + '</div>' +
-              '<div class="q-row"><div class="q-label-wrap" style="flex:1;min-width:0"><div class="q-label" id="clLabel"></div><div class="q-status" id="clStatus" style="display:none"></div></div>' +
-              '<button class="q-draft" id="clBtn" type="button">' + IC.spark + '<span>' + esc(T.clGenerate) + '</span></button></div></div>' +
-            '<div class="offer-card" id="offerCard">' +
-              '<div class="offer-job" id="offerJob"></div>' +
-              '<div class="offer-loading" id="offerLoading"><span class="spin"></span><span>' + esc(T.offerAnalyzing) + '</span></div>' +
-              '<div id="offerBody" style="display:none">' +
-                '<div class="offer-score"><div class="score-ring" id="offerRing" style="background:var(--faint)">--</div><div class="score-meta"><div class="score-level" id="offerLevel"></div><div class="score-sub" id="offerSummary"></div></div></div>' +
-                '<div class="offer-sec" id="offerHaveSec" style="display:none"><div class="offer-sec-label">' + esc(T.offerStrengths) + '</div><div class="chips-row" id="offerHave"></div></div>' +
-                '<div class="offer-sec" id="offerGapSec" style="display:none"><div class="offer-sec-label">' + esc(T.offerGaps) + '</div><div class="chips-row" id="offerGap"></div></div>' +
-              '</div>' +
-              '<div class="offer-note" id="offerNote" style="display:none"></div>' +
-              '<div class="offer-cta"><button class="btn btn-primary" id="offerSaveBtn">' + IC.plus + '<span id="offerSaveText">' + esc(T.offerSave) + '</span></button></div>' +
-            '</div>' +
-            '<div class="cta-row" id="applyCta">' +
-              '<button class="btn btn-primary" id="fillBtn" disabled>' + IC.check + '<span id="fillBtnText">' + esc(T.fillBtn(0)) + '</span></button>' +
-              '<button class="btn btn-ghost" id="cvBtn">' + esc(T.attachCta) + '</button>' +
-            '</div>' +
-          '</section>' +
-          // CVS
-          '<section class="view" id="view-cvs">' +
-            '<div class="section-label" id="cvsLabel">' + esc(T.yourCvs) + '</div>' +
-            '<div id="cvsList"></div>' +
-            '<div class="cta-row">' +
-              '<a class="btn btn-primary" id="genCvBtn" href="' + API_BASE + '/dashboard/cvs" target="_blank" rel="noreferrer noopener">' + IC.plus + '<span id="genCvText">' + esc(T.genCv) + '</span></a>' +
-              '<a class="btn btn-ghost" id="openEditorBtn" href="' + API_BASE + '/dashboard/cvs" target="_blank" rel="noreferrer noopener">' + esc(T.openEditor) + '</a>' +
-            '</div>' +
-          '</section>' +
-          // ACTIVITY
-          '<section class="view" id="view-activity">' +
-            '<div class="section-label" id="activityLabel">' + esc(T.yourApps) + '</div>' +
-            '<button class="btn btn-ghost" id="savePageBtn" style="width:100%;margin-bottom:8px">' + IC.plus + '<span id="savePageText">' + esc(T.saveThisPage) + '</span></button>' +
-            '<div class="q-status" id="savePageStatus" style="display:none;margin-bottom:10px"></div>' +
-            '<div id="activityList"></div>' +
-            '<a class="link block" id="viewPipelineLink" href="' + API_BASE + '/dashboard/pipeline" target="_blank" rel="noreferrer noopener">' + esc(T.viewPipeline) + ' →</a>' +
-          '</section>' +
-          // PROFILE
-          '<section class="view" id="view-profile">' +
-            '<div class="section-label" id="profileLabel">' + esc(T.profileUsed) + '</div>' +
-            '<div id="profileBody"></div>' +
-            '<a class="btn btn-ghost" id="editProfileBtn" href="' + API_BASE + '/dashboard/profile" target="_blank" rel="noreferrer noopener" style="margin-top:12px">' + esc(T.editProfile) + '</a>' +
-            '<button class="link" id="disconnectBtn" style="margin-top:12px;color:var(--danger)">' + esc(T.disconnect) + '</button>' +
-          '</section>' +
-          // PLAN (static placeholder for v1)
-          '<section class="view" id="view-plan">' +
-            '<div class="section-label" id="planLabel">' + esc(T.yourPlan) + '</div>' +
-            '<div class="ctx" style="margin-bottom:12px"><div class="ctx-main"><span class="ctx-tag" id="planTag">' + esc(T.planTitle) + '</span><div class="ctx-title" id="planTitleEl">' + esc(T.planTitle) + '</div><div class="ctx-sub" id="planSubEl">' + esc(T.planSub) + '</div></div></div>' +
-            '<div class="quota"><div class="quota-top"><span id="qAutofillsEl">' + esc(T.qAutofills) + '</span><span class="n" id="qUnlimitedEl">' + esc(T.qUnlimited) + '</span></div><div class="meter"><i style="width:100%;background:var(--blue)"></i></div></div>' +
-            '<a class="btn btn-ghost" id="managePlanBtn" href="' + API_BASE + '/dashboard/settings/billing" target="_blank" rel="noreferrer noopener" style="margin-top:6px">' + esc(T.managePlan) + '</a>' +
-          '</section>' +
+        '<div class="scroll" id="scroll">' +
+          '<div class="body" id="body" role="region" aria-live="polite"></div>' +
+          '<div class="act" id="act"></div>' +
         '</div>' +
-        '<nav class="nav" id="nav">' +
-          '<button class="active" data-view="apply">' + IC.navApply + esc(T.nav.apply) + '</button>' +
-          '<button data-view="cvs">' + IC.navCv + esc(T.nav.cvs) + '</button>' +
-          '<button data-view="activity">' + IC.navActivity + esc(T.nav.activity) + '</button>' +
-          '<button data-view="profile">' + IC.navProfile + esc(T.nav.profile) + '</button>' +
-          '<button data-view="plan">' + IC.navPlan + esc(T.nav.plan) + '</button>' +
-        '</nav>' +
+        '<nav class="nav" id="nav">' + navBtns + '</nav>' +
       '</aside>' +
       '<div class="widget" id="widget">' +
         '<button class="w-close" id="wClose" title="' + esc(T.widgetMenu) + '" aria-label="' + esc(T.widgetMenu) + '">' + IC.close + '</button>' +
-        '<div class="w-logo">' + widgetLogo + '</div>' +
+        '<div class="w-logo">' + widgetLogo + '<span class="w-score" id="wScore"></span></div>' +
         '<div class="w-grip" id="wGrip" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span></div>' +
       '</div>' +
       '<div class="w-menu" id="wMenu">' +
@@ -726,242 +694,529 @@
     )
   }
 
-  // ---- component state -------------------------------------------------------
-  var root = null          // shadow root
-  var sbEl = null          // .sb
-  var applyView = null     // #view-apply
-  var chipEl = null, chipText = null
-  var readyFields = []     // [{key,label,value}] from the last ready event
-  var chipMap = []         // seeded fchip elements (index-aligned to readyFields)
-  var readyQuestions = []  // [{label}] screening questions from the last ready event
-  var qRowMap = []         // { btn, status } per question row (index-aligned)
-  var offerLoaded = false  // the job-offer match view has run for offerUrl
-  var offerJob = null      // the scraped job used for analysis + save
-  var offerUrl = ''        // the URL the current offer view was loaded for
-  var userSetCollapse = false
-  var loaded = { cvs: false, activity: false, profile: false }
-  var lastSkipped = 0
-  var lastSkippedList = []  // the last detection skipped array, so readback fails append to it
-  var fillWatchdog = null   // fires if a started fill never reports progress/done
-  // ---- floating widget (collapsed launcher) + disable state -----------------
-  var widgetEl = null, wMenuEl = null
-  var dragState = null, dragDocWired = false
-  var HOST = (typeof location !== 'undefined' && location.hostname || '').toLowerCase()
-  var disabledAll = false          // "disable on all pages" (persisted)
-  var disabledDomains = {}         // { hostname: true } "disable on this domain" (persisted)
-  var widgetPos = null             // { left, top } persisted drag position
-  var currentState = 'detecting' // mirrors the .is-<state> on #view-apply
-  // Once the user starts a fill, lock the apply view so the post-fill re-detect
-  // (which now sees 0 fillable inputs, because they are filled) cannot downgrade
-  // the feed back to "0 fields / Ready". Unlocks only on a genuinely new form.
-  var flowLocked = false
-
-  var NAV_ICON = { apply: IC.navApply, cvs: IC.navCv, activity: IC.navActivity, profile: IC.navProfile, plan: IC.navPlan }
-
-  function $(id) { return root ? root.getElementById(id) : null }
-
-  function setState(s) {
-    currentState = s
-    if (applyView) applyView.className = 'view active is-' + s
-    if (chipEl) chipEl.setAttribute('data-s', s)
-    if (chipText) chipText.textContent = (t().state[s] || '')
+  function setBody(html) { if (bodyEl) bodyEl.innerHTML = html }
+  function setAct(html) {
+    if (!actEl) return
+    actEl.innerHTML = html || ''
+    updateActShadow()
+  }
+  // The action bar only casts a shadow when content actually scrolls under it,
+  // so a short screen never fakes hidden content.
+  function updateActShadow() {
+    if (!actEl || !scrollEl) return
+    var scrolls = scrollEl.scrollHeight > scrollEl.clientHeight + 1
+    if (scrolls && actEl.innerHTML) actEl.classList.add('floats')
+    else actEl.classList.remove('floats')
   }
 
-  // Re-apply every static, table-backed string in the current language. Called
-  // after any late locale flip (boot GET_PROFILE, primeContextFallback,
-  // loadProfile) so the shell, which is built once at mount, never keeps stale
-  // English when the user's app locale resolves to fr/es afterwards. Dynamic,
-  // state-driven strings (detected count, progress N/M, done copy, ctx card) are
-  // owned by their handlers and only re-applied here when it is safe for the
-  // current state, so relocalizing never clobbers live content.
-  function relocalize() {
-    if (!root) return
+  function jobHeadHTML(where, title, sub) {
+    return '<div class="blk"><div class="where">' + esc(where) + '</div>' +
+      (title ? '<div class="job"><h1>' + esc(title) + '</h1>' + (sub ? '<p>' + esc(sub) + '</p>' : '') + '</div>' : '') +
+      '</div>'
+  }
+
+  // ---- render: page view -----------------------------------------------------
+  function renderPage() {
+    if (!bodyEl) return
+    bodyEl.className = 'body'
+    if (ctx === 'gate') return renderGate()
+    if (ctx === 'apply') return renderApply()
+    if (ctx === 'offer') return renderOffer()
+    if (ctx === 'loading') return renderLoading()
+    return renderNone()
+  }
+
+  function renderLoading() {
     var T = t()
-    // header
-    var cb = $('collapseBtn'); if (cb) { cb.setAttribute('title', T.collapse); cb.setAttribute('aria-label', T.collapse) }
-    var sbA = $('sb'); if (sbA) sbA.setAttribute('aria-label', T.panelLabel)
-    if (chipText) chipText.textContent = T.state[currentState] || ''
-    // apply view: section label + non-dynamic feed steps
-    setTextById('applyLabel', T.applyWith)
-    var matchLbl = applyView && applyView.querySelector('.step[data-step="match"] .lbl')
-    if (matchLbl) matchLbl.innerHTML = esc(T.profileMatched) + '<small>' + esc(T.profileMatchedSub) + '</small>'
-    var submitLbl = applyView && applyView.querySelector('.step[data-step="submit"] .lbl')
-    if (submitLbl) submitLbl.innerHTML = esc(T.submitStep) + '<small>' + esc(T.submitSub) + '</small>'
-    // attach label: keep an appended cv name (attaching/done) if present
-    var attachLbl = $('attachLbl'); if (attachLbl && !attachLbl.querySelector('small')) attachLbl.textContent = T.attachStep
-    // detect / fill labels are state-owned; only reset while still detecting
-    if (currentState === 'detecting') { var dl = $('detectLbl'); if (dl) dl.textContent = T.state.detecting }
-    var sb = $('stopBtn'); if (sb) sb.textContent = '■ ' + T.stop
-    if (currentState !== 'filling' && currentState !== 'done') {
-      var pt = $('progText'); if (pt) pt.textContent = T.filling(0, readyFields.length)
-    }
-    var fbt = $('fillBtnText'); if (fbt) fbt.textContent = T.fillBtn(readyFields.length)
-    var cvBtn = $('cvBtn'); if (cvBtn) cvBtn.textContent = T.attachCta
-    if (currentState !== 'done') { var dt = $('doneTitle'); if (dt) dt.textContent = T.doneMsgs[0] }
-    // message cards + skipped header
-    var eb = applyView && applyView.querySelector('.empty-card b'); if (eb) eb.textContent = T.emptyTitle
-    var ep = applyView && applyView.querySelector('.empty-card p'); if (ep) ep.textContent = T.emptyBody
-    var errb = applyView && applyView.querySelector('.error-card b'); if (errb && currentState !== 'error') errb.textContent = T.errorTitle
-    setTextById('attnHead', T.attnHead)
-    var qh = $('qHead'); if (qh) qh.innerHTML = '<span class="spark">' + IC.spark + '</span>' + esc(T.questionsHead)
-    var clh = $('clHeadEl'); if (clh) clh.innerHTML = '<span class="spark">' + IC.spark + '</span>' + esc(T.clHead)
-    // ctx card defaults (renderCtx owns it once a ctx event lands)
-    if (!window.__jobswiperSidebarCtxSeen) {
-      var tag = $('ctxTag'); if (tag) tag.textContent = T.cvTailored
-      var chg = $('ctxChange'); if (chg) chg.textContent = T.change
-    }
-    // secondary views
-    setTextById('cvsLabel', T.yourCvs)
-    setTextById('genCvText', T.genCv)
-    setTextById('openEditorBtn', T.openEditor)
-    setTextById('activityLabel', T.yourApps)
-    setTextById('savePageText', T.saveThisPage)
-    if (currentState !== 'offer') setTextById('offerSaveText', T.offerSave)
-    var vp = $('viewPipelineLink'); if (vp) vp.textContent = T.viewPipeline + ' →'
-    setTextById('profileLabel', T.profileUsed)
-    setTextById('editProfileBtn', T.editProfile)
-    setTextById('disconnectBtn', T.disconnect)
-    var wcl = $('wClose'); if (wcl) { wcl.setAttribute('title', T.widgetMenu); wcl.setAttribute('aria-label', T.widgetMenu) }
-    var wm = $('wMenu')
-    if (wm) {
-      var wlabels = { hide: T.hideUntilVisit, domain: T.disableDomain, all: T.disableAll }
-      var wbtns = wm.querySelectorAll('button')
-      for (var wi = 0; wi < wbtns.length; wi++) {
-        var wa = wbtns[wi].getAttribute('data-act')
-        if (wlabels[wa]) wbtns[wi].textContent = wlabels[wa]
-      }
-    }
-    setTextById('planLabel', T.yourPlan)
-    setTextById('planTag', T.planTitle)
-    setTextById('planTitleEl', T.planTitle)
-    setTextById('planSubEl', T.planSub)
-    setTextById('qAutofillsEl', T.qAutofills)
-    setTextById('qUnlimitedEl', T.qUnlimited)
-    setTextById('managePlanBtn', T.managePlan)
-    // bottom nav labels (keep each button's leading SVG icon)
-    var navEl = $('nav')
-    if (navEl) {
-      var nb = navEl.querySelectorAll('button')
-      for (var i = 0; i < nb.length; i++) {
-        var v = nb[i].getAttribute('data-view')
-        if (v && T.nav[v]) nb[i].innerHTML = (NAV_ICON[v] || '') + esc(T.nav[v])
-      }
-    }
+    setBody(jobHeadHTML(hostLabel(), '', '') +
+      '<div class="loading"><span class="spin"></span><span>' + esc(T.loading) + '</span></div>')
+    setAct('')
   }
 
-  function setTextById(id, s) { var e = $(id); if (e) e.textContent = s }
-  function stepEl(name) { return applyView ? applyView.querySelector('.step[data-step="' + name + '"]') : null }
-  function setStep(name, st) { var el = stepEl(name); if (el) el.setAttribute('data-st', st) }
-
-  // ---- render helpers --------------------------------------------------------
-  function renderCtx(data) {
+  // ---- context: gate ---------------------------------------------------------
+  function renderGate() {
     var T = t()
-    var cv = (data && data.cv) || {}
-    var tailored = !!cv.tailored
-    var tag = $('ctxTag'), title = $('ctxTitle'), sub = $('ctxSub'), change = $('ctxChange')
-    if (tag) tag.textContent = tailored ? T.cvTailored : T.cvBase
-    if (title) title.textContent = cv.name || (tailored ? T.cvTailored : T.cvBase)
-    if (sub) {
-      var bits = []
-      bits.push(tailored ? T.tailoredFor : T.genericCv)
-      if (data && data.profileName) bits.push(data.profileName)
-      sub.textContent = bits.join(' · ') + ' · '
-      var a = document.createElement('a')
-      a.id = 'ctxChange'; a.textContent = T.change
-      a.addEventListener('click', function () { switchView('cvs') })
-      sub.appendChild(a)
-    } else if (change) {
-      change.addEventListener('click', function () { switchView('cvs') })
-    }
+    var profileKind = gateInfo && gateInfo.kind === 'complete'
+    var title = profileKind ? T.gateProfile : T.gateSignIn
+    var body
+    if (profileKind) body = T.gateProfileBody
+    else if (readyFields.length) body = T.gateSignInBody(readyFields.length, readyQuestions.length)
+    else body = T.gateSignInPlain
+    var href = (gateInfo && gateInfo.href) || (API_BASE + (profileKind ? '/dashboard/profile' : '/login'))
+    var label = profileKind ? T.gateProfileBtn : T.gateSignInBtn
+    bodyEl.className = 'body mid'
+    // The action sits right under the sentence it answers, not pinned at the far
+    // bottom of an otherwise empty panel.
+    setBody('<div class="empty blk"><h2>' + esc(title) + '</h2><p>' + esc(body) + '</p></div>' +
+      '<a class="btn btn-p" href="' + esc(href) + '" target="_blank" rel="noreferrer noopener">' + esc(label) + '</a>')
+    setAct('')
   }
 
-  function pillClassFor(status) {
-    var s = String(status || '').toLowerCase()
-    if (s.indexOf('interview') !== -1 || s.indexOf('entretien') !== -1 || s.indexOf('entrevist') !== -1) return 'interview'
-    if (s.indexOf('draft') !== -1 || s.indexOf('brouillon') !== -1 || s.indexOf('borrador') !== -1) return 'draft'
-    return 'applied'
-  }
-  function statusLabel(status) {
-    var T = t(), s = String(status || '').toLowerCase()
-    if (s.indexOf('interview') !== -1 || s.indexOf('entretien') !== -1 || s.indexOf('entrevist') !== -1) return T.statusInterview
-    if (s.indexOf('draft') !== -1 || s.indexOf('brouillon') !== -1 || s.indexOf('borrador') !== -1) return T.statusDraft
-    if (s.indexOf('progress') !== -1 || s.indexOf('cours') !== -1 || s.indexOf('curso') !== -1) return T.statusInProgress
-    return T.statusApplied
-  }
-
-  // ---- data views ------------------------------------------------------------
-  function loadCvs() {
-    var el = $('cvsList'); if (!el) return
-    send({ type: 'GET_CVS' }, function (resp) {
-      var T = t()
-      if (!resp || !resp.ok || !Array.isArray(resp.cvs) || resp.cvs.length === 0) {
-        el.innerHTML = '<div class="muted-note">' + esc(T.cvsEmpty) + '</div>'
-        return
+  // ---- context: offer --------------------------------------------------------
+  function scrapeJob(headerOnly) {
+    var job = { url: location.href }
+    try {
+      var h1 = document.querySelector('h1')
+      var title = (h1 && h1.textContent) || document.title || ''
+      job.title = oneLine(title).slice(0, 200)
+    } catch (e) { /* noop */ }
+    try {
+      var og = document.querySelector('meta[property="og:site_name"]')
+      var company = (og && og.getAttribute('content')) || hostLabel().split('.')[0] || ''
+      job.company = String(company).slice(0, 120)
+    } catch (e) { /* noop */ }
+    if (headerOnly) return job
+    try {
+      if (window.JobSwiperExtract && typeof window.JobSwiperExtract.collectPageText === 'function') {
+        job.description = window.JobSwiperExtract.collectPageText(8000) // reads + strips PII
       }
-      var current = resp.selectedCvId || resp.defaultCvId || (resp.cvs[0] && resp.cvs[0].id)
-      var html = ''
-      resp.cvs.forEach(function (cv) {
-        var isActive = cv.id === current
-        html += '<div class="row' + (isActive ? ' active' : '') + '">' +
-          '<div class="cv-thumb" style="width:34px;height:44px"></div>' +
-          '<div class="row-main"><div class="row-title">' + esc(cv.title || 'CV') + '</div>' +
-          '<div class="row-sub">' + esc(cv.isPerJob ? T.tailoredFor : T.genericCv) + '</div></div>' +
-          (isActive
-            ? '<span class="pill use">' + esc(T.active) + '</span>'
-            : '<button class="link" data-cv-id="' + esc(cv.id) + '">' + esc(T.use) + '</button>') +
+    } catch (e) { /* noop */ }
+    return job
+  }
+
+  // Title + company for the panel header, cached per URL. Cheap (two selectors),
+  // and never pulls the page body: the apply context needs the header only.
+  var pageJob = { url: '', title: '', company: '' }
+  function jobHeader() {
+    if (offer.job && offer.url === location.href) return offer.job
+    if (pageJob.url !== location.href) {
+      var j = scrapeJob(true)
+      pageJob = { url: location.href, title: j.title || '', company: j.company || '' }
+    }
+    return pageJob
+  }
+
+  function renderOffer() {
+    var T = t()
+    var job = offer.job || {}
+    var head = jobHeadHTML(whereLine(T.whereOffer), job.title || '', job.company || '')
+    if (offer.pending) {
+      setBody(head + '<div class="loading"><span class="spin"></span><span>' + esc(T.analyzing) + '</span></div>')
+      setAct('')
+      return
+    }
+    var d = offer.data
+    var score = d && typeof d.match_score === 'number' ? Math.round(d.match_score) : null
+    if (score == null) {
+      var msg = (d === false) ? T.offerError : T.offerNoScore
+      setBody(head + '<div class="note blk">' + esc(msg) + '</div>')
+      setAct(offerActionsHTML())
+      wireOfferActions()
+      return
+    }
+
+    var reasons = Array.isArray(d.reasons) ? d.reasons : []
+    // A cold-start payload reports score 0 with a single "complete your profile"
+    // reason. That is not a bad match, it is no match computed at all: never show
+    // it as a zero.
+    if (reasons.indexOf(COLD_START) !== -1) {
+      setBody(head + '<div class="note blk">' + esc(T.coldStart) + '</div>')
+      setAct('<a class="btn btn-p" href="' + API_BASE + '/dashboard/profile" target="_blank" rel="noreferrer noopener">' + esc(T.gateProfileBtn) + '</a>')
+      return
+    }
+
+    var musts = '', quote = '', extra = []
+    reasons.forEach(function (r) {
+      var m = RE_MUSTS.exec(r)
+      if (m) { musts = T.mustHaves(m[1], m[2]); return }
+      var g = RE_MISSING.exec(r)
+      if (g) { if (!quote) quote = oneLine(g[1]); return }
+      if (r === 'Seniority gap for this role') extra.push(T.reasonSeniority)
+      else if (r === 'Education requirement not met') extra.push(T.reasonEducation)
+      else if (r === 'Experience in similar role') extra.push(T.reasonExperience)
+    })
+
+    var tier = (d.match_level && T.tiers[d.match_level]) ? d.match_level : tierOf(score)
+    var html = head
+    html += '<div class="blk t-' + tier + '">' +
+      '<div class="score"><b>' + score + '</b><span>' + esc(T.tiers[tier]) + '</span>' +
+      (musts ? '<em>' + esc(musts) + '</em>' : '') + '</div>' +
+      '<div class="bar"><i style="width:' + clamp01(score) + '%"></i></div>' +
+      (extra.length ? '<div class="note" style="margin-top:9px">' + esc(extra.join(' · ')) + '</div>' : '') +
+      (d.score_fallback ? '<div class="src" style="margin-top:7px">' + esc(T.scoreFallback) + '</div>' : '') +
+      '</div>'
+
+    var qlow = quote.toLowerCase()
+    var gaps = (Array.isArray(d.missing_skills) ? d.missing_skills : []).filter(function (s) {
+      return s && String(s).toLowerCase() !== qlow
+    }).slice(0, 10)
+    if (quote || gaps.length) {
+      html += '<div class="blk"><div class="lbl">' + esc(T.missing) + '</div>'
+      if (quote) {
+        html += '<div class="quote">« ' + esc(quote) + ' »</div>' +
+          '<div class="src">' + esc(T.quotedFrom) + '</div>'
+      }
+      if (gaps.length) {
+        html += '<div class="chips"' + (quote ? ' style="margin-top:10px"' : '') + '>' +
+          gaps.map(function (s) { return '<span class="chip gap">' + esc(s) + '</span>' }).join('') + '</div>'
+      }
+      html += '</div>'
+    }
+
+    var have = Array.isArray(d.matched_skills) ? d.matched_skills.filter(Boolean).slice(0, 12) : []
+    if (have.length) {
+      html += '<div class="blk"><div class="lbl">' + esc(T.have) + '</div><div class="chips">' +
+        have.map(function (s) { return '<span class="chip have">' + esc(s) + '</span>' }).join('') + '</div></div>'
+    }
+
+    setBody(html)
+    setAct(offerActionsHTML())
+    wireOfferActions()
+  }
+
+  function offerActionsHTML() {
+    var T = t()
+    var already = offer.saved || !!(offer.data && offer.data.already_saved)
+    var save = already
+      ? '<button class="btn btn-g" id="offerSave" disabled>' + IC.check + '<span>' + esc(T.offerAlready) + '</span></button>'
+      : '<button class="btn btn-p" id="offerSave">' + IC.plus + '<span>' + esc(T.offerSave) + '</span></button>'
+    return save +
+      '<a class="btn btn-g" href="' + API_BASE + '/dashboard/cvs" target="_blank" rel="noreferrer noopener">' + esc(T.offerTailor) + '</a>' +
+      '<div class="status" id="offerStatus" style="display:none"></div>'
+  }
+  function wireOfferActions() {
+    var b = $('offerSave')
+    if (b && !b.disabled) b.addEventListener('click', saveOffer)
+  }
+
+  function runOffer(force) {
+    var T = t()
+    if (offer.loaded && offer.url === location.href && !force) return
+    offer.url = location.href
+    offer.loaded = true
+    offer.data = null
+    offer.saved = false
+    offer.pending = true
+    offer.job = scrapeJob()
+    if (view === 'page' && ctx === 'offer') renderOffer()
+    send({ type: 'ANALYZE_JOB', job: offer.job }, function (resp) {
+      offer.pending = false
+      // `false` marks a transient failure (auth, network, timeout), which is not
+      // the same as an authenticated user whose profile yields no score.
+      var failed = !resp || resp.success === false
+      offer.data = failed ? false : resp
+      if (failed) { offer.loaded = false; offer.url = '' } // let the next open retry
+      if (!failed && resp && typeof resp.match_score === 'number') setWidgetScore(Math.round(resp.match_score))
+      if (view === 'page' && ctx === 'offer') renderOffer()
+    })
+  }
+
+  function saveOffer() {
+    var T = t()
+    var btn = $('offerSave'), st = $('offerStatus')
+    if (!btn || btn.disabled) return
+    var job = (offer.job && offer.url === location.href) ? offer.job : scrapeJob()
+    btn.disabled = true
+    var span = btn.querySelector('span'); if (span) span.textContent = T.saving
+    send({ type: 'SAVE_JOB', data: {
+      title: job.title, company: job.company, description: job.description,
+      url: job.url || location.href, source: 'page-capture', extraction_method: 'scrape',
+    } }, function (saved) {
+      var ok = !!(saved && saved.success)
+      if (ok) {
+        offer.saved = true
+        loaded.jobs = false
+        setAct(offerActionsHTML())
+        wireOfferActions()
+      } else {
+        btn.disabled = false
+        if (span) span.textContent = T.offerSave
+        if (st) { st.style.display = 'block'; st.className = 'status err'; st.textContent = T.saveFailed }
+      }
+    })
+  }
+
+  // ---- context: apply --------------------------------------------------------
+  function renderApply() {
+    var T = t()
+    var job = jobHeader()
+    var head = jobHeadHTML(whereLine(T.whereApply), job.title || '', job.company || '')
+    var html = head
+    qRefs = []; fieldRefs = []; clRef = null; progRef = null; foldRef = null
+
+    // CV in use
+    if (cvCtx && cvCtx.name) {
+      html += '<div class="cv blk">' + IC.doc.replace('<svg', '<svg class="doc"') +
+        '<span class="n">' + esc(cvCtx.name) + '</span>' +
+        '<button class="act-link" id="cvChange">' + esc(T.change) + '</button></div>'
+    }
+
+    // fields + their values
+    if (applyPhase === 'filled') {
+      html += '<div class="blk">' +
+        '<button class="fold' + (detailOpen ? ' open' : '') + '" id="fold">' +
+          '<span class="tk">' + IC.checkFat + '</span>' +
+          '<b>' + esc(T.filled(filledCount)) + '</b>' +
+          '<span class="more">' + esc(detailOpen ? T.hideDetail : T.seeDetail) + IC.chevronD + '</span>' +
+        '</button>' +
+        '<div class="sub">' + esc(T.reviewThem) + '</div>' +
+        '<div id="fieldsWrap" style="' + (detailOpen ? 'margin-top:10px' : 'display:none') + '">' + fieldsHTML() + '</div>' +
+      '</div>'
+    } else if (readyFields.length) {
+      html += '<div class="blk"><div class="lbl">' + esc(T.willWrite) + '</div>' + fieldsHTML() +
+        (applyPhase === 'filling'
+          ? '<div class="prog"><i id="progBar"></i></div>' +
+            '<div class="prog-meta"><span id="progText">' + esc(T.filling(0, readyFields.length)) + '</span>' +
+            '<button id="stopBtn">' + esc(T.stop) + '</button></div>'
+          : '') +
+        '</div>'
+    }
+
+    // attached CV
+    if (attachState) {
+      var atxt = attachState === 'attaching' ? T.attaching
+        : attachState === 'error' ? T.attachFailed
+        : T.attached(attachState.name || 'CV')
+      html += '<div class="cv blk">' + IC.doc.replace('<svg', '<svg class="doc"') +
+        '<span class="n">' + esc(atxt) + '</span>' +
+        (attachState === 'attaching' ? '<span class="spin" style="margin-left:auto"></span>'
+          : attachState === 'error' ? '' : '<span class="tk">' + IC.check.replace('<svg', '<svg style="width:13px;height:13px"') + '</span>') +
+        '</div>'
+    }
+
+    // what stays with the user
+    if (readySkipped.length) {
+      html += '<div class="blk"><div class="lbl">' + esc(T.yours) + '</div><div class="you">'
+      readySkipped.forEach(function (sk, i) {
+        var required = sk.reason === 'required'
+        html += '<div class="y"><span class="n">' + esc(sk.label || '') + '</span>' +
+          '<span class="tag ' + (required ? 'req' : 'sens') + '">' + esc(required ? T.tagRequired : T.tagSensitive) + '</span>' +
+          (required && sk.input ? '<button class="go" data-skip="' + i + '">' + esc(T.jump) + '</button>' : '') +
           '</div>'
       })
-      el.innerHTML = html
-      var btns = el.querySelectorAll('button[data-cv-id]')
-      for (var i = 0; i < btns.length; i++) {
-        btns[i].addEventListener('click', function () {
-          var id = this.getAttribute('data-cv-id')
-          cmd('selectCv', id)
-          loaded.cvs = false
-          setTimeout(loadCvs, 250)
-        })
+      html += '</div>' + (hasSensitive() ? '<div class="src" style="margin-top:7px">' + esc(T.sensitiveWhy) + '</div>' : '') + '</div>'
+    }
+
+    // the form's own questions (+ cover letter, which is one of them)
+    var qs = readyQuestions.slice()
+    if (readyCL) qs.push({ label: readyCL.label || T.clLabel, isCL: true })
+    if (qs.length) {
+      html += '<div class="blk"><div class="lbl">' + esc(T.questions) + '</div><div id="qList">'
+      qs.forEach(function (q, i) {
+        html += '<div class="q"><span class="txt">' + esc(q.label || '') +
+          '<span class="st" style="display:none"></span></span>' +
+          '<button class="btn-s" data-q="' + i + '"' + (q.isCL ? ' data-cl="1"' : '') + '>' + esc(T.draft) + '</button></div>'
+      })
+      html += '</div></div>'
+    }
+
+    if (!readyFields.length && !readySkipped.length && !qs.length) {
+      html += '<div class="note blk">' + esc(T.noFields) + '</div>'
+    }
+
+    setBody(html)
+
+    // actions
+    if (applyPhase === 'idle' && readyFields.length) {
+      setAct('<button class="btn btn-p" id="fillBtn">' + IC.check + '<span>' + esc(T.fillBtn(readyFields.length)) + '</span></button>' +
+        (attachState ? '' : '<button class="btn btn-g" id="attachBtn">' + esc(T.attachCta) + '</button>') +
+        '<div class="foot">' + esc(T.submitYours) + '</div>')
+    } else if (applyPhase === 'filling') {
+      setAct('<button class="btn btn-p" disabled><span class="spin"></span><span>' + esc(T.filling(0, readyFields.length)) + '</span></button>')
+    } else if (applyPhase === 'filled') {
+      setAct(attachState ? '' : '<button class="btn btn-g" id="attachBtn">' + esc(T.attachCta) + '</button>')
+      if (bodyEl) {
+        var f = document.createElement('div')
+        f.className = 'foot left'
+        f.textContent = T.submitYours
+        bodyEl.appendChild(f)
       }
-    })
+    } else {
+      setAct('')
+    }
+    wireApply()
   }
 
-  function loadActivity() {
-    var el = $('activityList'); if (!el) return
+  function hasSensitive() {
+    for (var i = 0; i < readySkipped.length; i++) { if (readySkipped[i].reason !== 'required') return true }
+    return false
+  }
+
+  function fieldsHTML() {
+    var html = '<div class="fields" id="fieldList">'
+    readyFields.forEach(function (f, i) {
+      var done = applyPhase === 'filled' || (f.__done === true)
+      html += '<div class="f' + (done ? '' : ' pending') + '" data-f="' + i + '">' +
+        '<span class="k">' + esc(f.label || f.key || '') + '</span>' +
+        '<span class="v">' + esc(f.value != null ? String(f.value) : '') + '</span>' +
+        '<span class="s">' + (done ? '✓' : '') + '</span></div>'
+    })
+    return html + '</div>'
+  }
+
+  function wireApply() {
+    var T = t()
+    var fill = $('fillBtn')
+    if (fill) fill.addEventListener('click', function () {
+      if (!readyFields.length) return
+      enterFilling()
+      cmd('startFill')
+    })
+    var stop = $('stopBtn')
+    if (stop) stop.addEventListener('click', function () { cmd('stopFill') })
+    var att = $('attachBtn')
+    if (att) att.addEventListener('click', function () {
+      attachState = 'attaching'
+      renderApply()
+      cmd('attachCv')
+    })
+    var chg = $('cvChange')
+    if (chg) chg.addEventListener('click', function () { switchView('me') })
+    var fold = $('fold')
+    if (fold) fold.addEventListener('click', function () {
+      detailOpen = !detailOpen
+      renderApply()
+    })
+    if (bodyEl) {
+      var gos = bodyEl.querySelectorAll('button[data-skip]')
+      for (var i = 0; i < gos.length; i++) {
+        ;(function (btn) {
+          btn.addEventListener('click', function () {
+            var sk = readySkipped[Number(btn.getAttribute('data-skip'))]
+            if (sk && sk.input) jumpToField(sk.input)
+          })
+        })(gos[i])
+      }
+      var qbtns = bodyEl.querySelectorAll('button[data-q]')
+      qRefs = []
+      for (var j = 0; j < qbtns.length; j++) {
+        ;(function (btn) {
+          var row = btn.closest ? btn.closest('.q') : null
+          var st = row ? row.querySelector('.st') : null
+          var idx = Number(btn.getAttribute('data-q'))
+          var isCL = btn.getAttribute('data-cl') === '1'
+          var label = row ? oneLine(row.querySelector('.txt') ? row.querySelector('.txt').childNodes[0].nodeValue : '') : ''
+          qRefs[idx] = { btn: btn, st: st, label: label, isCL: isCL }
+          if (isCL) clRef = qRefs[idx]
+          btn.addEventListener('click', function () {
+            if (btn.disabled) return
+            startDraftUI(qRefs[idx])
+            if (isCL) cmd('generateCoverLetter')
+            else cmd('draftAnswer', idx)
+          })
+        })(qbtns[j])
+      }
+      fieldRefs = bodyEl.querySelectorAll('.f')
+    }
+    progRef = $('progBar')
+    updateActShadow()
+  }
+
+  function startDraftUI(ref) {
+    if (!ref) return
+    var T = t()
+    ref.btn.disabled = true
+    ref.btn.innerHTML = '<span class="spin"></span>'
+    if (ref.st) { ref.st.style.display = 'block'; ref.st.className = 'st'; ref.st.textContent = T.drafting }
+  }
+  function endDraftUI(ref, status) {
+    if (!ref) return
+    var T = t()
+    ref.btn.disabled = false
+    ref.btn.textContent = status === 'done' ? T.redraft : T.draft
+    if (!ref.st) return
+    ref.st.style.display = 'block'
+    if (status === 'done') { ref.st.className = 'st ok'; ref.st.textContent = T.drafted }
+    else if (status === 'limit') { ref.st.className = 'st err'; ref.st.textContent = T.aiLimit }
+    else { ref.st.className = 'st err'; ref.st.textContent = T.draftFailed }
+  }
+
+  var pulsingFields = (typeof WeakSet !== 'undefined') ? new WeakSet() : null
+  function jumpToField(input) {
+    try {
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (typeof input.focus === 'function') {
+        try { input.focus({ preventScroll: true }) } catch (e) { input.focus() }
+      }
+      if (pulsingFields && pulsingFields.has(input)) return
+      if (pulsingFields) pulsingFields.add(input)
+      var po = input.style.outline, poff = input.style.outlineOffset
+      input.style.outline = '2px solid #0064be'
+      input.style.outlineOffset = '2px'
+      setTimeout(function () {
+        input.style.outline = po; input.style.outlineOffset = poff
+        if (pulsingFields) pulsingFields.delete(input)
+      }, 1600)
+    } catch (e) { /* node gone */ }
+  }
+
+  function enterFilling() {
+    applyPhase = 'filling'
+    armFillWatchdog()
+    renderApply()
+  }
+  function armFillWatchdog() {
+    clearFillWatchdog()
+    fillWatchdog = setTimeout(function () {
+      fillWatchdog = null
+      if (applyPhase !== 'filling') return
+      // The fill never reported anything: fall back to the honest post-fill view
+      // rather than spinning forever.
+      applyPhase = 'filled'
+      renderApply()
+    }, 15000)
+  }
+  function clearFillWatchdog() { if (fillWatchdog) { clearTimeout(fillWatchdog); fillWatchdog = null } }
+
+  // ---- render: jobs view -----------------------------------------------------
+  function statusMeta(status) {
+    var T = t(), s = String(status || '').toLowerCase()
+    if (s.indexOf('interview') !== -1 || s.indexOf('entretien') !== -1 || s.indexOf('entrevist') !== -1) return { c: 'itw', l: T.statusInterview }
+    if (s.indexOf('appl') !== -1 || s.indexOf('postul') !== -1) return { c: 'app', l: T.statusApplied }
+    if (s.indexOf('draft') !== -1 || s.indexOf('brouillon') !== -1 || s.indexOf('borrador') !== -1) return { c: '', l: T.statusDraft }
+    return { c: '', l: T.statusSaved }
+  }
+  function jobRowsHTML(list) {
+    return '<div class="rows">' + list.map(function (r) {
+      var title = r.title || r.job_title || r.role || 'Job'
+      var company = r.company || r.company_name || ''
+      var when = r.when || r.created_at || r.updated_at || ''
+      var m = statusMeta(r.status)
+      return '<button class="r" data-job="' + esc(r.id || '') + '">' +
+        '<span class="m"><b>' + esc(title) + '</b>' +
+        (company || when ? '<span>' + esc([company, when].filter(Boolean).join(' · ')) + '</span>' : '') + '</span>' +
+        '<span class="st ' + m.c + '">' + esc(m.l) + '</span>' + IC.chevronR.replace('<svg', '<svg class="chev"') +
+        '</button>'
+    }).join('') + '</div>'
+  }
+  function wireJobRows() {
+    if (!bodyEl) return
+    var rows = bodyEl.querySelectorAll('button[data-job]')
+    for (var i = 0; i < rows.length; i++) {
+      ;(function (btn) {
+        btn.addEventListener('click', function () {
+          var id = btn.getAttribute('data-job')
+          openTab(API_BASE + (id ? '/dashboard/jobs/' + encodeURIComponent(id) : '/dashboard/pipeline'))
+        })
+      })(rows[i])
+    }
+  }
+  function openTab(url) { try { window.open(url, '_blank', 'noreferrer,noopener') } catch (e) { /* noop */ } }
+
+  function renderJobs() {
+    var T = t()
+    bodyEl.className = 'body'
+    setBody('<div class="loading"><span class="spin"></span></div>')
+    setAct('<button class="btn btn-g" id="savePage">' + IC.plus + '<span>' + esc(T.saveAnyway) + '</span></button>' +
+      '<div class="status" id="saveStatus" style="display:none"></div>')
+    var sp = $('savePage'); if (sp) sp.addEventListener('click', saveThisPage)
     send({ type: 'GET_STATS' }, function (resp) {
-      var T = t()
-      if (!resp || !resp.ok) {
-        el.innerHTML = '<div class="muted-note">' + esc(T.activityEmpty) + '</div>'
-        return
-      }
-      var recent = Array.isArray(resp.recent) ? resp.recent : []
-      var html = ''
-      if (recent.length) {
-        recent.slice(0, 8).forEach(function (r) {
-          var title = r.title || r.job_title || r.role || 'Job'
-          var company = r.company || r.company_name || ''
-          var where = r.location || r.city || r.when || r.updated_at || ''
-          var pc = pillClassFor(r.status)
-          html += '<div class="row"><div class="row-main">' +
-            '<div class="row-title">' + esc(title) + (company ? ' · ' + esc(company) : '') + '</div>' +
-            (where ? '<div class="row-sub">' + esc(where) + '</div>' : '') +
-            '</div><span class="pill ' + pc + '">' + esc(statusLabel(r.status)) + '</span></div>'
-        })
-      } else {
-        var saved = resp.saved != null ? resp.saved : (resp.savedCount != null ? resp.savedCount : null)
-        var applied = resp.applied != null ? resp.applied : (resp.appliedCount != null ? resp.appliedCount : null)
-        if (saved == null && applied == null) {
-          html = '<div class="muted-note">' + esc(T.activityEmpty) + '</div>'
-        } else {
-          if (saved != null) html += '<div class="kv"><span class="k">' + esc(T.saved) + '</span><span class="v">' + esc(saved) + '</span></div>'
-          if (applied != null) html += '<div class="kv"><span class="k">' + esc(T.applied) + '</span><span class="v">' + esc(applied) + '</span></div>'
-        }
-      }
-      el.innerHTML = html
+      if (view !== 'jobs') return
+      var list = (resp && Array.isArray(resp.recent_saves)) ? resp.recent_saves
+        : (resp && Array.isArray(resp.recent)) ? resp.recent : []
+      recentJobs = list
+      var html = '<div class="blk"><div class="lbl">' + esc(T.jobsLabel) + '</div>'
+      html += list.length ? jobRowsHTML(list.slice(0, 8)) : '<div class="note">' + esc(T.jobsEmpty) + '</div>'
+      html += '</div>'
+      html += '<button class="r" data-job="" style="border-top:1px solid var(--line-soft);padding-top:12px">' +
+        '<span class="m"><b>' + esc(T.viewPipeline) + '</b></span>' + IC.chevronR.replace('<svg', '<svg class="chev"') + '</button>'
+      setBody(html)
+      wireJobRows()
+      updateActShadow()
     })
   }
 
-  // ---- save this page (universal job capture, migrated from the old popup) ----
-  // Cheap client-side plausibility gate (ported from the popup) so a random
-  // long-form page never burns a ~20s AI PARSE_JOB_PAGE call before failing.
+  // ---- save this page --------------------------------------------------------
   var SAVE_SIGNALS = [
     /apply|postuler|candidature/i,
     /salary|salaire|compensation/i,
@@ -975,15 +1230,15 @@
     for (var i = 0; i < SAVE_SIGNALS.length; i++) { if (SAVE_SIGNALS[i].test(text)) n++ }
     return n
   }
-  function showSaveStatus(msg, isErr) {
-    var st = $('savePageStatus'); if (!st) return
+  function saveStatus(msg, cls) {
+    var st = $('saveStatus'); if (!st) return
     st.style.display = 'block'
-    st.className = 'q-status' + (isErr ? ' err' : ' ok')
+    st.className = 'status ' + (cls || '')
     st.textContent = msg
   }
   function saveThisPage() {
     var T = t()
-    var btn = $('savePageBtn'), txt = $('savePageText')
+    var btn = $('savePage')
     if (!btn || btn.disabled) return
     var text = ''
     try {
@@ -991,640 +1246,387 @@
         text = window.JobSwiperExtract.collectPageText(15000) // reads + strips PII in one call
       }
     } catch (e) { /* noop */ }
-    if (!text || text.length < 200 || saveScore(text) < 2) { showSaveStatus(T.saveNotJob, true); return }
-    btn.disabled = true; if (txt) txt.textContent = T.saving
-    showSaveStatus(T.saving, false)
+    if (!text || text.length < 200 || saveScore(text) < 2) { saveStatus(T.saveNotJob, 'err'); return }
+    btn.disabled = true
+    var span = btn.querySelector('span'); if (span) span.textContent = T.saving
+    saveStatus(T.saving, '')
     send({ type: 'PARSE_JOB_PAGE', pageText: text, url: location.href }, function (parsed) {
-      if (!parsed || !parsed.success || !parsed.job) { finishSave(false, null); return }
+      if (!parsed || !parsed.success || !parsed.job) return finishSave(false, null)
       var job = parsed.job
       var payload = {}
       for (var k in job) { if (Object.prototype.hasOwnProperty.call(job, k)) payload[k] = job[k] }
       payload.source = 'page-capture'
       payload.extraction_method = 'ai'
       payload.url = job.url || location.href
-      send({ type: 'SAVE_JOB', data: payload }, function (saved) {
-        finishSave(!!(saved && saved.success), job)
-      })
+      send({ type: 'SAVE_JOB', data: payload }, function (saved) { finishSave(!!(saved && saved.success), job) })
     })
   }
   function finishSave(ok, job) {
     var T = t()
-    var btn = $('savePageBtn'), txt = $('savePageText')
-    if (btn) btn.disabled = false
-    if (txt) txt.textContent = T.saveThisPage
-    if (ok) { showSaveStatus(T.savedJob((job && job.title) || ''), false); loaded.activity = false; loadActivity() }
-    else showSaveStatus(T.saveFailed, true)
+    var btn = $('savePage')
+    if (btn) {
+      btn.disabled = false
+      var span = btn.querySelector('span'); if (span) span.textContent = T.saveAnyway
+    }
+    if (ok) {
+      saveStatus(T.savedJob((job && job.title) || ''), 'ok')
+      loaded.jobs = false
+      if (view === 'jobs') renderJobs()
+    } else saveStatus(T.saveFailed, 'err')
   }
 
-  function loadProfile() {
-    var el = $('profileBody'); if (!el) return
-    send({ type: 'GET_PROFILE' }, function (resp) {
-      var T = t()
-      if (resp && resp.locale) { var nl = pickLang(resp.locale); if (nl !== lang) { lang = nl; T = t(); relocalize() } }
-      if (!resp || !resp.ok || !resp.profile) {
-        el.innerHTML = '<div class="muted-note">' + esc(T.profileEmpty) + '</div>' +
-          '<a class="btn btn-ghost" href="' + API_BASE + '/login" target="_blank" rel="noreferrer noopener" style="margin-top:8px">' + esc(T.signIn) + '</a>'
+  // ---- render: me view -------------------------------------------------------
+  function renderMe() {
+    var T = t()
+    bodyEl.className = 'body'
+    setBody('<div class="loading"><span class="spin"></span></div>')
+    setAct('')
+    send({ type: 'GET_PROFILE' }, function (pr) {
+      if (view !== 'me') return
+      if (pr && pr.locale) {
+        var nl = pickLang(pr.locale)
+        if (nl !== lang) { lang = nl; relocalizeChrome() }
+      }
+      var T2 = t()
+      if (!pr || !pr.ok || !pr.profile) {
+        bodyEl.className = 'body mid'
+        setBody('<div class="empty blk"><h2>' + esc(T2.gateSignIn) + '</h2><p>' + esc(T2.gateSignInPlain) + '</p></div>')
+        setAct('<a class="btn btn-p" href="' + API_BASE + '/login" target="_blank" rel="noreferrer noopener">' + esc(T2.gateSignInBtn) + '</a>')
         return
       }
-      var p = resp.profile
-      var html = ''
-      var comp = resp.completeness
+      var p = pr.profile
+      var html = '<div class="blk"><div class="lbl">' + esc(T2.profileLabel) + '</div>'
+      var comp = pr.completeness
       if (comp != null) {
         var pct = clamp01(comp <= 1 ? comp * 100 : comp)
-        var col = pct >= 80 ? 'var(--emerald)' : pct >= 50 ? 'var(--blue)' : 'var(--sunset)'
-        html += '<div class="quota" style="margin-bottom:12px"><div class="quota-top"><span>' + esc(T.completeness) + '</span>' +
-          '<span class="n">' + Math.round(pct) + '%</span></div><div class="meter"><i style="width:' + pct + '%;background:' + col + '"></i></div></div>'
+        var col = pct >= 80 ? 'var(--ok)' : pct >= 50 ? 'var(--blue)' : 'var(--warn)'
+        html += '<div class="score" style="align-items:center"><b style="font-size:20px">' + Math.round(pct) + '%</b>' +
+          '<span style="font-size:12.5px;font-weight:700;color:var(--muted)">' + esc(T2.completeness) + '</span></div>' +
+          '<div class="meter"><i style="width:' + pct + '%;background:' + col + '"></i></div>'
       }
       var fullName = p.full_name || [p.first_name, p.last_name].filter(Boolean).join(' ') || p.name
       var rows = [
-        ['full_name', fullName],
-        ['email', p.email],
-        ['phone', p.phone],
-        ['city', p.city || p.location],
-        ['current_company', p.current_company || p.company],
-        ['headline', p.headline],
+        ['full_name', fullName], ['email', p.email], ['phone', p.phone],
+        ['city', p.city || p.location], ['current_company', p.current_company || p.company],
         ['linkedin_url', p.linkedin_url || p.linkedin],
-        ['website', p.website],
       ]
-      var any = false
+      var kv = ''
       rows.forEach(function (r) {
         if (!r[1]) return
-        any = true
-        html += '<div class="kv"><span class="k">' + esc(T.pf[r[0]] || r[0]) + '</span><span class="v">' + esc(r[1]) + '</span></div>'
+        kv += '<div class="kv"><span class="k">' + esc(T2.pf[r[0]] || r[0]) + '</span><span class="v">' + esc(r[1]) + '</span></div>'
       })
-      if (!any) html = '<div class="muted-note">' + esc(T.profileEmpty) + '</div>'
-      el.innerHTML = html
+      html += (kv ? '<div style="margin-top:10px">' + kv + '</div>' : '<div class="note" style="margin-top:8px">' + esc(T2.profileEmpty) + '</div>')
+      html += '<button class="btn btn-g inline" id="editProfile" style="margin-top:12px">' + esc(T2.editProfile) + '</button></div>'
+      html += '<div class="blk" id="cvBlock"><div class="lbl">' + esc(T2.cvsLabel) + '</div>' +
+        '<div class="loading"><span class="spin"></span></div></div>'
+      html += '<div class="blk"><div class="lbl">' + esc(T2.accountLabel) + '</div>' +
+        '<button class="r" id="planLink"><span class="m"><b>' + esc(T2.managePlan) + '</b></span>' +
+        IC.chevronR.replace('<svg', '<svg class="chev"') + '</button>' +
+        '<button class="r" id="signOut"><span class="m"><b>' + esc(T2.signOut) + '</b>' +
+        '<span>' + esc(T2.signOutNote) + '</span></span></button></div>'
+      setBody(html)
+      var ep = $('editProfile'); if (ep) ep.addEventListener('click', function () { openTab(API_BASE + '/dashboard/profile') })
+      var pl = $('planLink'); if (pl) pl.addEventListener('click', function () { openTab(API_BASE + '/dashboard/settings/billing') })
+      var so = $('signOut'); if (so) so.addEventListener('click', function () {
+        send({ type: 'LOGOUT' }, function () { loaded.me = false; renderMe() })
+      })
+      loadCvs()
+      updateActShadow()
     })
   }
 
-  // Build a fallback context card from GET_CVS + GET_PROFILE, in case the ctx
-  // bus event fired before this sidebar subscribed.
-  function primeContextFallback() {
-    send({ type: 'GET_PROFILE' }, function (pr) {
-      if (pr && pr.locale) { var nl = pickLang(pr.locale); if (nl !== lang && !window.__jobswiperSidebarCtxSeen) { lang = nl; relocalize() } }
-      var profileName = null
-      if (pr && pr.ok && pr.profile) {
-        var p = pr.profile
-        profileName = p.full_name || [p.first_name, p.last_name].filter(Boolean).join(' ') || p.name || null
+  function loadCvs() {
+    var block = $('cvBlock'); if (!block) return
+    send({ type: 'GET_CVS' }, function (resp) {
+      var T = t()
+      var block2 = $('cvBlock'); if (!block2) return
+      var head = '<div class="lbl">' + esc(T.cvsLabel) + '</div>'
+      if (!resp || !resp.ok || !Array.isArray(resp.cvs) || !resp.cvs.length) {
+        block2.innerHTML = head + '<div class="note">' + esc(T.cvsEmpty) + '</div>' +
+          '<button class="btn btn-g inline" id="newCv" style="margin-top:10px">' + esc(T.newCv) + '</button>'
+        var nc = $('newCv'); if (nc) nc.addEventListener('click', function () { openTab(API_BASE + '/dashboard/cvs') })
+        return
       }
-      send({ type: 'GET_CVS' }, function (cr) {
-        if (window.__jobswiperSidebarCtxSeen) return // real ctx already rendered
-        var cv = {}
-        if (cr && cr.ok && Array.isArray(cr.cvs) && cr.cvs.length) {
-          var curId = cr.selectedCvId || cr.defaultCvId || cr.cvs[0].id
-          var chosen = null
-          for (var i = 0; i < cr.cvs.length; i++) { if (cr.cvs[i].id === curId) { chosen = cr.cvs[i]; break } }
-          chosen = chosen || cr.cvs[0]
-          cv = { name: chosen.title || null, tailored: !!chosen.isPerJob }
-        }
-        renderCtx({ cv: cv, profileName: profileName })
+      var current = selectedCvId || resp.selectedCvId || resp.defaultCvId || resp.cvs[0].id
+      var html = head + '<div class="rows">'
+      resp.cvs.forEach(function (cv) {
+        var on = cv.id === current
+        html += '<button class="r" data-cv="' + esc(cv.id) + '">' +
+          '<span class="m"><b>' + esc(cv.title || 'CV') + '</b></span>' +
+          '<span class="st' + (on ? ' on' : '') + '">' + esc(on ? T.active : T.use) + '</span></button>'
       })
+      html += '</div><button class="btn btn-g inline" id="newCv" style="margin-top:10px">' + esc(T.newCv) + '</button>'
+      block2.innerHTML = html
+      var nc2 = $('newCv'); if (nc2) nc2.addEventListener('click', function () { openTab(API_BASE + '/dashboard/cvs') })
+      var btns = block2.querySelectorAll('button[data-cv]')
+      for (var i = 0; i < btns.length; i++) {
+        ;(function (btn) {
+          btn.addEventListener('click', function () { pickCv(btn.getAttribute('data-cv')) })
+        })(btns[i])
+      }
     })
   }
 
-  // ---- apply state machine (driven by the bus) -------------------------------
+  // The server only records a CV choice when it is tied to a saved job, so an ATS
+  // page has nothing to record against. Persist the choice locally too, and let
+  // the attach layer read it back, otherwise "Use" is a lie that resets on the
+  // next page.
+  var selectedCvId = null
+  function pickCv(id) {
+    if (!id) return
+    selectedCvId = id
+    storageSet({ jsw_selected_cv_id: id })
+    cmd('selectCv', id)
+    loadCvs()
+  }
+
+  // ---- context: none ---------------------------------------------------------
+  function renderNone() {
+    var T = t()
+    var html = '<div class="blk"><div class="where">' + esc(hostLabel()) + '</div>' +
+      '<div class="empty" style="margin-top:6px"><h2>' + esc(T.noneTitle) + '</h2><p>' + esc(T.noneBody) + '</p></div>' +
+      '<button class="btn btn-g inline" id="savePage" style="margin-top:12px">' + IC.plus + '<span>' + esc(T.saveAnyway) + '</span></button>' +
+      '<div class="status" id="saveStatus" style="display:none;margin-top:8px"></div></div>'
+    html += '<div class="blk" id="recentBlock"></div>'
+    setBody(html)
+    setAct('')
+    var sp = $('savePage'); if (sp) sp.addEventListener('click', saveThisPage)
+    if (recentJobs) renderRecent()
+    else send({ type: 'GET_STATS' }, function (resp) {
+      if (view !== 'page' || ctx !== 'none') return
+      recentJobs = (resp && Array.isArray(resp.recent_saves)) ? resp.recent_saves
+        : (resp && Array.isArray(resp.recent)) ? resp.recent : []
+      renderRecent()
+    })
+  }
+  function renderRecent() {
+    var T = t()
+    var b = $('recentBlock'); if (!b || !recentJobs || !recentJobs.length) return
+    b.innerHTML = '<div class="lbl">' + esc(T.resume) + '</div>' + jobRowsHTML(recentJobs.slice(0, 3))
+    wireJobRows()
+    updateActShadow()
+  }
+
+  // ---- views -----------------------------------------------------------------
+  function switchView(name) {
+    view = name
+    var nav = $('nav')
+    if (nav) {
+      var btns = nav.querySelectorAll('button')
+      for (var i = 0; i < btns.length; i++) btns[i].className = btns[i].getAttribute('data-view') === name ? 'on' : ''
+    }
+    if (scrollEl) scrollEl.scrollTop = 0
+    if (name === 'page') renderPage()
+    else if (name === 'jobs') renderJobs()
+    else renderMe()
+  }
+
+  // Re-apply the chrome strings that live outside the rendered views after a late
+  // locale flip; the views themselves are rebuilt on every render.
+  function relocalizeChrome() {
+    if (!root) return
+    var T = t()
+    var cb = $('collapseBtn'); if (cb) { cb.setAttribute('title', T.collapse); cb.setAttribute('aria-label', T.collapse) }
+    var sb = $('sb'); if (sb) sb.setAttribute('aria-label', T.panelLabel)
+    var nav = $('nav')
+    if (nav) {
+      var btns = nav.querySelectorAll('button')
+      for (var i = 0; i < btns.length; i++) {
+        var v = btns[i].getAttribute('data-view')
+        if (v && T.nav[v]) btns[i].innerHTML = (NAV_ICON[v] || '') + esc(T.nav[v])
+      }
+    }
+    var wc = $('wClose'); if (wc) { wc.setAttribute('title', T.widgetMenu); wc.setAttribute('aria-label', T.widgetMenu) }
+    if (wMenuEl) {
+      var labels = { hide: T.hideUntilVisit, domain: T.disableDomain, all: T.disableAll }
+      var mb = wMenuEl.querySelectorAll('button')
+      for (var j = 0; j < mb.length; j++) {
+        var a = mb[j].getAttribute('data-act')
+        if (labels[a]) mb[j].textContent = labels[a]
+      }
+    }
+  }
+
+  // ---- bus handlers ----------------------------------------------------------
   function onCtx(data) {
-    window.__jobswiperSidebarCtxSeen = true
-    renderCtx(data)
+    var cv = (data && data.cv) || null
+    if (cv && (cv.name || cv.tailored)) cvCtx = { name: cv.name, tailored: !!cv.tailored }
+    if (view === 'page' && ctx === 'apply') renderApply()
   }
 
   function onDetecting() {
-    if (flowLocked) return // do not flip a filled/done view back to "Analyzing…"
-    setState('detecting')
-    setStep('detect', 'active')
-    var mk = $('detectMk'); if (mk) mk.innerHTML = '<span class="spin"></span>'
-    var dl = $('detectLbl'); if (dl) dl.textContent = t().state.detecting
+    if (applyPhase !== 'idle') return
+    gateInfo = null
+    if (ctx !== 'apply') setContext('apply')
   }
 
   function onReady(data) {
-    var T = t()
     var fields = (data && Array.isArray(data.fields)) ? data.fields : []
-    if (flowLocked) {
-      // Post-fill re-detect on the SAME form now sees 0 fillable inputs (they are
-      // filled): ignore it so the done summary sticks. A genuinely new/changed
-      // form (fields > 0) is worth showing, so unlock and render it.
-      if (fields.length === 0) return
-      flowLocked = false
-    }
+    // A post-fill re-detect on the SAME form reports 0 fillable inputs because
+    // they are filled: keep the result summary. A genuinely new form resets it.
+    if (applyPhase === 'filled' && !fields.length) return
+    if (fields.length) applyPhase = 'idle'
+    gateInfo = null
     readyFields = fields
-    var skipped = (data && Array.isArray(data.skipped)) ? data.skipped : []
-    lastSkipped = skipped.length
-    lastSkippedList = skipped
-    setState('ready')
-    // detect step -> done
-    setStep('detect', 'done')
-    var mk = $('detectMk'); if (mk) { mk.innerHTML = ''; mk.textContent = '✓' }
-    var dl = $('detectLbl')
-    if (dl) dl.innerHTML = esc(T.detected(readyFields.length)) + '<small>' + esc(T.formRecognized) + '</small>'
-    // match step -> done
-    setStep('match', 'done')
-    var mMk = applyView.querySelector('.step[data-step="match"] .mk'); if (mMk) mMk.textContent = '✓'
-    // fill step -> pending, counter = N
-    setStep('fill', 'pending')
-    var fmk = $('fillMk'); if (fmk) { fmk.innerHTML = ''; fmk.textContent = String(readyFields.length) }
-    var fl = $('fillLbl'); if (fl) fl.textContent = T.fillStep
-    // reset progress + filled list
-    var pb = $('progBar'); if (pb) pb.style.width = '0'
-    var pe = $('progEl'); if (pe) { pe.setAttribute('aria-valuemax', String(readyFields.length)); pe.setAttribute('aria-valuenow', '0') }
-    var pt = $('progText'); if (pt) pt.textContent = T.filling(0, readyFields.length)
-    var fList = $('filledList'); if (fList) fList.innerHTML = ''
-    chipMap = []
-    // attach + submit pending
-    setStep('attach', 'pending'); setStep('submit', 'pending')
-    // skipped list
-    renderSkipped(skipped)
-    // screening questions (AI draft, explicit per-question)
+    readySkipped = (data && Array.isArray(data.skipped)) ? data.skipped : []
     readyQuestions = (data && Array.isArray(data.questions)) ? data.questions : []
-    renderQuestions(readyQuestions)
-    renderCoverLetter((data && data.coverLetter) || null)
-    // CTA
-    var fb = $('fillBtn'); if (fb) fb.disabled = readyFields.length === 0
-    var fbt = $('fillBtnText'); if (fbt) fbt.textContent = T.fillBtn(readyFields.length)
-    // auto-expand once when a form is found (unless the user chose collapse)
+    readyCL = (data && data.coverLetter) || null
+    detailOpen = false
+    setContext('apply', true)
     if (!userSetCollapse) expand()
-  }
-
-  function renderSkipped(skipped) {
-    var T = t()
-    var attn = $('attn'), rows = $('attnRows')
-    if (!attn || !rows) return
-    if (!skipped.length) { attn.style.display = 'none'; rows.innerHTML = ''; return }
-    attn.style.display = ''
-    rows.innerHTML = ''
-    skipped.forEach(function (sk) {
-      var required = sk.reason === 'required'
-      var why = required ? T.reasonRequired : T.reasonSensitive
-      var row = document.createElement('div')
-      row.className = 'attn-row' + (required ? ' need' : '')
-      var lock = document.createElement('span')
-      lock.className = 'lock'; lock.textContent = required ? '◉' : '🔒'
-      row.appendChild(lock)
-      row.appendChild(document.createTextNode(sk.label || ''))
-      var whyEl = document.createElement('span')
-      whyEl.className = 'why'; whyEl.textContent = why
-      row.appendChild(whyEl)
-      // Jump affordance only for REQUIRED rows we hold a live input ref for.
-      // Sensitive fields deliberately get no jump: the sidebar declined to touch
-      // them for privacy, so it must not shortcut the user to them either.
-      if (required && sk.input && sk.input.nodeType === 1) {
-        var jump = document.createElement('button')
-        jump.className = 'jumpbtn'; jump.type = 'button'; jump.textContent = T.jump
-        ;(function (target) {
-          jump.addEventListener('click', function (e) { e.stopPropagation(); jumpToField(target) })
-        })(sk.input)
-        row.appendChild(jump)
-      }
-      rows.appendChild(row)
-    })
-  }
-
-  // ---- screening questions (AI draft) ----------------------------------------
-  // Render one row per detected free-text question, each with an explicit "Draft"
-  // button. Nothing is auto-answered: a draft only happens on a click, is grounded
-  // on the user's profile server-side, and is inserted for the user to review.
-  function renderQuestions(questions) {
-    var T = t()
-    var box = $('questions'), rows = $('questionRows')
-    if (!box || !rows) return
-    qRowMap = []
-    if (!questions.length) { box.style.display = 'none'; rows.innerHTML = ''; return }
-    box.style.display = ''
-    rows.innerHTML = ''
-    questions.forEach(function (q, i) {
-      var row = document.createElement('div')
-      row.className = 'q-row'
-      var main = document.createElement('div'); main.className = 'q-label-wrap'
-      main.style.flex = '1'; main.style.minWidth = '0'
-      var lbl = document.createElement('div'); lbl.className = 'q-label'; lbl.textContent = q.label || ''
-      main.appendChild(lbl)
-      var status = document.createElement('div'); status.className = 'q-status'; status.style.display = 'none'
-      main.appendChild(status)
-      row.appendChild(main)
-      var btn = document.createElement('button')
-      btn.className = 'q-draft'; btn.type = 'button'
-      btn.innerHTML = IC.spark + '<span>' + esc(T.draftBtn) + '</span>'
-      ;(function (idx, b, s) {
-        b.addEventListener('click', function () {
-          if (b.disabled) return
-          startDraftUI(b, s)
-          cmd('draftAnswer', idx)
-        })
-      })(i, btn, status)
-      row.appendChild(btn)
-      qRowMap[i] = { btn: btn, status: status, label: q.label }
-      rows.appendChild(row)
-    })
-  }
-
-  function startDraftUI(btn, status) {
-    btn.disabled = true
-    btn.innerHTML = '<span class="qspin"></span>'
-    status.style.display = 'block'; status.className = 'q-status'; status.textContent = t().drafting
-  }
-  function resetDraftBtn(btn) {
-    btn.disabled = false
-    btn.innerHTML = IC.spark + '<span>' + esc(t().draftBtn) + '</span>'
-  }
-
-  // Bus 'answer' {index, status:'drafting'|'done'|'error'}. autofill has already
-  // inserted the drafted text into the page textarea on 'done'; here we only
-  // reflect the per-row state.
-  function onAnswer(data) {
-    if (!data) return
-    // Match by label (stable across a redetect that rebuilt the rows); fall back
-    // to the raw index only if no label came through.
-    var e = null
-    if (data.label != null) {
-      for (var i = 0; i < qRowMap.length; i++) {
-        if (qRowMap[i] && qRowMap[i].label === data.label) { e = qRowMap[i]; break }
-      }
-    }
-    if (!e && typeof data.index === 'number') e = qRowMap[data.index]
-    if (!e) return
-    var T = t()
-    if (data.status === 'drafting') {
-      startDraftUI(e.btn, e.status)
-    } else if (data.status === 'done') {
-      resetDraftBtn(e.btn)
-      e.status.style.display = 'block'; e.status.className = 'q-status ok'; e.status.textContent = T.answerInserted
-    } else if (data.status === 'limit') {
-      resetDraftBtn(e.btn)
-      e.status.style.display = 'block'; e.status.className = 'q-status err'; e.status.textContent = T.aiLimit
-    } else if (data.status === 'error') {
-      resetDraftBtn(e.btn)
-      e.status.style.display = 'block'; e.status.className = 'q-status err'; e.status.textContent = T.answerFailed
-    }
-  }
-
-  // ---- job-offer match view (viewing a listing, not applying) ----------------
-  function scrapeJobForAnalysis() {
-    var job = { url: location.href }
-    try {
-      var h1 = document.querySelector('h1')
-      var title = (h1 && h1.textContent) || document.title || ''
-      job.title = title.replace(/\s+/g, ' ').trim().slice(0, 200)
-    } catch (e) { /* noop */ }
-    try {
-      var og = document.querySelector('meta[property="og:site_name"]')
-      var company = (og && og.getAttribute('content')) || (location.hostname || '').replace(/^www\./, '').split('.')[0] || ''
-      job.company = String(company).slice(0, 120)
-    } catch (e) { /* noop */ }
-    try {
-      if (window.JobSwiperExtract && typeof window.JobSwiperExtract.collectPageText === 'function') {
-        job.description = window.JobSwiperExtract.collectPageText(8000) // reads + strips PII
-      }
-    } catch (e) { /* noop */ }
-    return job
-  }
-  function scoreColor(score) {
-    if (score >= 75) return 'var(--emerald)'
-    if (score >= 50) return 'var(--blue)'
-    if (score >= 30) return 'var(--sunset)'
-    return 'var(--danger)'
-  }
-  function renderOfferJob(job) {
-    var el = $('offerJob'); if (!el) return
-    var title = (job && job.title) || t().offerHead
-    el.innerHTML = esc(title) + (job && job.company ? '<small>' + esc(job.company) + '</small>' : '')
-  }
-  function chipsInto(id, list, cls) {
-    var el = $(id); if (!el) return 0
-    el.innerHTML = ''
-    var arr = Array.isArray(list) ? list.slice(0, 12) : []
-    var n = 0
-    arr.forEach(function (s) {
-      if (!s) return
-      var c = document.createElement('span'); c.className = 'chip-s ' + cls; c.textContent = String(s)
-      el.appendChild(c); n++
-    })
-    return n
-  }
-  function renderOfferResult(resp) {
-    var T = t()
-    var loading = $('offerLoading'); if (loading) loading.style.display = 'none'
-    var failed = !resp || resp.success === false
-    var score = resp && typeof resp.match_score === 'number' ? resp.match_score : null
-    if (score == null) {
-      // No number: a transient/auth/network failure (offerError, retryable) is
-      // NOT the same as an authenticated user with an empty profile (offerNoProfile).
-      var note = $('offerNote')
-      if (note) { note.style.display = 'block'; note.textContent = failed ? T.offerError : T.offerNoProfile }
-      // Let a failed check retry on the next open instead of latching a stale error.
-      if (failed) { offerLoaded = false; offerUrl = '' }
-      return
-    }
-    var body = $('offerBody'); if (body) body.style.display = 'block'
-    var ring = $('offerRing'); if (ring) { ring.textContent = String(Math.round(score)); ring.style.background = scoreColor(score) }
-    var lvl = $('offerLevel'); if (lvl) lvl.textContent = T.offerMatch
-    var sum = $('offerSummary'); if (sum) sum.textContent = (resp.summary || '').replace(/\s+/g, ' ').trim()
-    var hn = chipsInto('offerHave', resp.matched_skills, 'have')
-    var gn = chipsInto('offerGap', resp.missing_skills, 'gap')
-    var hs = $('offerHaveSec'); if (hs) hs.style.display = hn ? 'block' : 'none'
-    var gs = $('offerGapSec'); if (gs) gs.style.display = gn ? 'block' : 'none'
-  }
-  // Reset the one-shot latch when the page URL changed under us (SPA navigation
-  // on LinkedIn/Indeed swaps the job without a reload). Prevents showing, and
-  // saving, a stale job. Clears the card if it is currently on screen.
-  function resetOfferIfStale() {
-    if (!offerLoaded || !offerUrl || offerUrl === location.href) return
-    offerLoaded = false; offerJob = null; offerUrl = ''
-    var body = $('offerBody'); if (body) body.style.display = 'none'
-    var note = $('offerNote'); if (note) note.style.display = 'none'
-    var loading = $('offerLoading'); if (loading) loading.style.display = 'none'
-  }
-  function runOfferView() {
-    if (offerLoaded) return
-    offerLoaded = true
-    offerUrl = location.href
-    setState('offer')
-    offerJob = scrapeJobForAnalysis()
-    renderOfferJob(offerJob)
-    var loading = $('offerLoading'); if (loading) loading.style.display = 'flex'
-    var body = $('offerBody'); if (body) body.style.display = 'none'
-    var note = $('offerNote'); if (note) note.style.display = 'none'
-    send({ type: 'ANALYZE_JOB', job: offerJob }, function (resp) { renderOfferResult(resp) })
-  }
-  // Show the offer view when the panel opens on a relevant listing that is NOT an
-  // apply form (and the apply flow has not already taken over).
-  function maybeShowOffer() {
-    resetOfferIfStale()
-    if (offerLoaded) return
-    if (sbEl && sbEl.classList.contains('collapsed')) return // tab-only: don't burn an analysis
-    if (currentState === 'ready' || currentState === 'filling' || currentState === 'done') return
-    var b = bus()
-    if (!b) return
-    var isApply = typeof b.isLikelyJobApplication === 'function' && b.isLikelyJobApplication()
-    var relevant = typeof b.isRelevantSite === 'function' && b.isRelevantSite()
-    if (!isApply && relevant) runOfferView()
-  }
-  function saveOffer() {
-    var T = t()
-    var btn = $('offerSaveBtn'), txt = $('offerSaveText')
-    if (!btn || btn.disabled) return
-    // Never save a job scraped from a different URL than the one on screen now.
-    var job = (offerJob && offerUrl === location.href) ? offerJob : scrapeJobForAnalysis()
-    btn.disabled = true; if (txt) txt.textContent = T.saving
-    var payload = {
-      title: job.title, company: job.company, description: job.description,
-      url: job.url || location.href, source: 'page-capture', extraction_method: 'scrape',
-    }
-    send({ type: 'SAVE_JOB', data: payload }, function (saved) {
-      var ok = !!(saved && saved.success)
-      if (txt) txt.textContent = ok ? T.offerSaved : T.saveFailed
-      if (!ok) setTimeout(function () { if (btn) btn.disabled = false; if (txt) txt.textContent = T.offerSave }, 2500)
-    })
-  }
-
-  // ---- cover letter (AI generate + insert) -----------------------------------
-  function renderCoverLetter(cl) {
-    var box = $('coverletter'); if (!box) return
-    if (!cl) { box.style.display = 'none'; return }
-    box.style.display = ''
-    var lbl = $('clLabel'); if (lbl) lbl.textContent = cl.label || t().clHead
-    var st = $('clStatus'); if (st) { st.style.display = 'none'; st.className = 'q-status'; st.textContent = '' }
-    var btn = $('clBtn'); if (btn) { btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(t().clGenerate) + '</span>' }
-  }
-
-  // Bus 'coverletter' {status:'generating'|'done'|'error'|'nofield'}. autofill has
-  // already inserted the generated letter into the page textarea on 'done'.
-  function onCoverLetter(data) {
-    var T = t()
-    var btn = $('clBtn'), st = $('clStatus')
-    if (!btn || !st) return
-    var status = data && data.status
-    if (status === 'generating') {
-      btn.disabled = true; btn.innerHTML = '<span class="qspin"></span>'
-      st.style.display = 'block'; st.className = 'q-status'; st.textContent = T.clGenerating
-    } else if (status === 'done') {
-      btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(T.clGenerate) + '</span>'
-      st.style.display = 'block'; st.className = 'q-status ok'; st.textContent = T.clInserted
-    } else if (status === 'limit') {
-      btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(T.clGenerate) + '</span>'
-      st.style.display = 'block'; st.className = 'q-status err'; st.textContent = T.aiLimit
-    } else {
-      btn.disabled = false; btn.innerHTML = IC.spark + '<span>' + esc(T.clGenerate) + '</span>'
-      st.style.display = 'block'; st.className = 'q-status err'; st.textContent = T.clFailed
-    }
-  }
-
-  // Scroll the page to a skipped field and pulse it, so "REQUIRED" rows are not
-  // just a list but a shortcut. Styling the page node is fine (same document);
-  // wrapped in try/catch since the node may have been removed since detection.
-  var pulsingFields = (typeof WeakSet !== 'undefined') ? new WeakSet() : null
-  function jumpToField(input) {
-    try {
-      input.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      if (typeof input.focus === 'function') {
-        try { input.focus({ preventScroll: true }) } catch (e) { input.focus() }
-      }
-      // Skip re-pulsing while a pulse is in flight, otherwise a double-click would
-      // snapshot the already-blue outline and leave it stuck blue.
-      if (pulsingFields && pulsingFields.has(input)) return
-      if (pulsingFields) pulsingFields.add(input)
-      var po = input.style.outline, poff = input.style.outlineOffset
-      input.style.outline = '2px solid #0064be'
-      input.style.outlineOffset = '2px'
-      setTimeout(function () {
-        input.style.outline = po; input.style.outlineOffset = poff
-        if (pulsingFields) pulsingFields.delete(input)
-      }, 1600)
-    } catch (e) { /* node gone; nothing to jump to */ }
-  }
-
-  function seedFilledChips() {
-    var fList = $('filledList'); if (!fList) return
-    fList.innerHTML = ''
-    chipMap = []
-    readyFields.forEach(function (f, i) {
-      var div = document.createElement('div')
-      div.className = 'fchip pending'
-      div.innerHTML = '<span class="tick">○</span><span class="fk">' + esc(f.label || f.key || '') + '</span>'
-      fList.appendChild(div)
-      chipMap[i] = div
-    })
-  }
-
-  // Enter the 'filling' visual state: chip + fill step spinner, seeded field
-  // chips, disabled button, zeroed progress. Called optimistically the moment
-  // the user clicks Fill (so the UI responds and locks before any re-detect),
-  // and defensively from onProgress in case a progress event arrives first.
-  function enterFilling() {
-    flowLocked = true
-    setState('filling')
-    setStep('fill', 'active')
-    var fmk = $('fillMk'); if (fmk) fmk.innerHTML = '<span class="spin"></span>'
-    if (!chipMap.length) seedFilledChips()
-    var fb = $('fillBtn'); if (fb) fb.disabled = true
-    var pt = $('progText'); if (pt) pt.textContent = t().filling(0, readyFields.length)
-    armFillWatchdog()
-  }
-
-  function onProgress(data) {
-    var T = t()
-    if (!data) return
-    var total = data.total || readyFields.length || 0
-    var index = data.index || 0
-    if (applyView && applyView.className.indexOf('is-filling') === -1) {
-      enterFilling()
-    }
-    armFillWatchdog() // progress means the fill is moving; reset the stall timer
-    var pb = $('progBar'); if (pb && total) pb.style.width = (index / total * 100) + '%'
-    var pe = $('progEl'); if (pe) { pe.setAttribute('aria-valuemax', String(total)); pe.setAttribute('aria-valuenow', String(index)) }
-    var pt = $('progText'); if (pt) pt.textContent = T.filling(index, total)
-    // tick chips up to index
-    for (var i = 0; i < index && i < chipMap.length; i++) {
-      var c = chipMap[i]
-      if (c && c.classList.contains('pending')) {
-        c.classList.remove('pending')
-        var tk = c.querySelector('.tick'); if (tk) tk.textContent = '✓'
-      }
-    }
-  }
-
-  function onFilled(data) {
-    var T = t()
-    clearFillWatchdog()
-    var count = data && data.count != null ? data.count : readyFields.length
-    setStep('fill', 'done')
-    var fmk = $('fillMk'); if (fmk) { fmk.innerHTML = ''; fmk.textContent = '✓' }
-    var fl = $('fillLbl'); if (fl) fl.textContent = T.filledStep(count)
-    // tick any remaining seeded chips
-    for (var i = 0; i < chipMap.length; i++) {
-      var c = chipMap[i]
-      if (c && c.classList.contains('pending')) {
-        c.classList.remove('pending')
-        var tk = c.querySelector('.tick'); if (tk) tk.textContent = '✓'
-      }
-    }
-  }
-
-  function onAttach(data) {
-    var T = t()
-    var status = data && data.status
-    if (status === 'attaching') {
-      setStep('attach', 'active')
-      var al = $('attachLbl')
-      if (al && data.cvName) al.innerHTML = esc(T.attachStep) + '<small>' + esc(data.cvName) + '</small>'
-    } else if (status === 'done') {
-      setStep('attach', 'done')
-    } else if (status === 'error') {
-      setStep('attach', 'pending')
-    }
-  }
-
-  function onDone(data) {
-    var T = t()
-    clearFillWatchdog()
-    var filled = data && data.filled != null ? data.filled : readyFields.length
-    var skipped = data && data.skipped != null ? data.skipped : lastSkipped
-    setState('done')
-    setStep('fill', 'done')
-    setStep('submit', 'done')
-    var dt = $('doneTitle')
-    if (dt) dt.textContent = T.doneMsgs[Math.floor(Date.now() / 1000) % T.doneMsgs.length]
-    var dx = $('doneText'); if (dx) dx.textContent = T.doneText(filled, skipped)
-    // Fields that were attempted but did not stick (readback failures) are routed
-    // into the skipped list so the "needs you" panel reflects the honest state,
-    // and their optimistic ✓ chip is reverted so nothing reads as both filled and
-    // still-needed.
-    if (data && Array.isArray(data.unfilled) && data.unfilled.length) {
-      renderSkipped(lastSkippedList.concat(data.unfilled))
-      untickChips(data.unfilled)
-    }
-  }
-
-  function untickChips(unfilled) {
-    if (!chipMap.length) return
-    var labels = Object.create(null)
-    unfilled.forEach(function (u) { if (u && u.label) labels[u.label] = true })
-    for (var i = 0; i < chipMap.length; i++) {
-      var c = chipMap[i]; if (!c) continue
-      var fk = c.querySelector('.fk')
-      if (fk && labels[fk.textContent]) {
-        c.classList.add('pending')
-        var tk = c.querySelector('.tick'); if (tk) tk.textContent = '○'
-      }
-    }
   }
 
   function onEmpty() {
     clearFillWatchdog()
-    if (flowLocked) return // keep the done summary; the filled form still exists
-    setState('empty')
-    var fb = $('fillBtn'); if (fb) fb.disabled = true
-    // "No apply form here" is the strongest signal this is a listing: if the panel
-    // is open on a relevant job site, show the match view (and refresh it after a
-    // SPA nav to another job). maybeShowOffer no-ops when collapsed or irrelevant.
-    maybeShowOffer()
+    if (applyPhase === 'filled') return // the filled form is still on screen
+    readyFields = []; readySkipped = []; readyQuestions = []; readyCL = null
+    applyPhase = 'idle'
+    evaluatePage(true)
+  }
+
+  function onProgress(data) {
+    if (!data) return
+    var T = t()
+    if (applyPhase !== 'filling') enterFilling()
+    armFillWatchdog()
+    var total = data.total || readyFields.length || 0
+    var index = data.index || 0
+    if (progRef && total) progRef.style.width = (index / total * 100) + '%'
+    var pt = $('progText'); if (pt) pt.textContent = T.filling(index, total)
+    for (var i = 0; i < index && i < readyFields.length; i++) readyFields[i].__done = true
+    tickFieldRows(index)
+  }
+  function tickFieldRows(upTo) {
+    if (!bodyEl) return
+    var rows = bodyEl.querySelectorAll('.f')
+    for (var i = 0; i < rows.length && i < upTo; i++) {
+      rows[i].className = 'f'
+      var s = rows[i].querySelector('.s'); if (s) s.textContent = '✓'
+    }
+  }
+
+  function onFilled(data) {
+    clearFillWatchdog()
+    filledCount = (data && data.count != null) ? data.count : readyFields.length
+  }
+
+  function onAttach(data) {
+    var status = data && data.status
+    if (status === 'attaching') attachState = 'attaching'
+    else if (status === 'done') attachState = { name: (data && data.cvName) || 'CV' }
+    else if (status === 'error') attachState = 'error'
+    if (view === 'page' && ctx === 'apply') renderApply()
+  }
+
+  function onDone(data) {
+    clearFillWatchdog()
+    filledCount = (data && data.filled != null) ? data.filled : (filledCount || readyFields.length)
+    // Fields that were attempted but did not stick are moved back into "this
+    // stays yours" so nothing reads as both filled and still needed.
+    if (data && Array.isArray(data.unfilled) && data.unfilled.length) {
+      var labels = {}
+      data.unfilled.forEach(function (u) { if (u && u.label) labels[u.label] = true })
+      readyFields.forEach(function (f) { if (labels[f.label]) f.__done = false })
+      readySkipped = readySkipped.concat(data.unfilled)
+    }
+    applyPhase = 'filled'
+    setContext('apply', true)
   }
 
   function onError(data) {
     clearFillWatchdog()
-    flowLocked = false // a real failure always surfaces
-    setState('error')
-    var et = $('errorTitle'); if (et) et.textContent = t().errorTitle
-    var ex = $('errorText')
-    if (ex) ex.textContent = (data && data.message) ? String(data.message) : ''
-  }
-
-  // ---- fill watchdog ---------------------------------------------------------
-  // The user clicks Fill -> enterFilling() locks the view optimistically, then
-  // startFill runs an async SW round-trip. If that round-trip (or the fill loop)
-  // never reports back, the sidebar would sit in "Filling" forever. The watchdog
-  // surfaces a distinct timeout state instead. It is (re)armed on each progress
-  // tick, so only a genuine stall trips it, and cleared on any terminal event.
-  function armFillWatchdog() {
-    clearFillWatchdog()
-    fillWatchdog = setTimeout(onFillTimeout, 15000)
-  }
-  function clearFillWatchdog() {
-    if (fillWatchdog) { clearTimeout(fillWatchdog); fillWatchdog = null }
-  }
-  function onFillTimeout() {
-    fillWatchdog = null
-    if (currentState !== 'filling') return
-    flowLocked = false
-    var T = t()
-    setState('error')
-    var et = $('errorTitle'); if (et) et.textContent = T.timeoutTitle
-    var ex = $('errorText'); if (ex) ex.textContent = T.timeoutBody
-  }
-
-  // ---- view switching + collapse ---------------------------------------------
-  function switchView(name) {
-    if (!root) return
-    var btns = root.querySelectorAll('.nav button')
-    for (var i = 0; i < btns.length; i++) {
-      btns[i].classList.toggle('active', btns[i].getAttribute('data-view') === name)
+    var kind = data && data.kind
+    if (kind === 'signin' || kind === 'complete') {
+      gateInfo = { kind: kind, message: data.message, href: data.href }
+      applyPhase = 'idle'
+      setContext('gate', true)
+      return
     }
-    var views = root.querySelectorAll('.view')
-    for (var j = 0; j < views.length; j++) views[j].classList.remove('active')
-    var target = $('view-' + name)
-    if (target) target.classList.add('active')
-    if (name === 'cvs' && !loaded.cvs) { loaded.cvs = true; loadCvs() }
-    if (name === 'activity' && !loaded.activity) { loaded.activity = true; loadActivity() }
-    if (name === 'profile' && !loaded.profile) { loaded.profile = true; loadProfile() }
+    // Anything else is a local failure, not an account problem: surface it where
+    // the action was, without blowing away the page context.
+    var T = t()
+    var st = $('offerStatus') || $('saveStatus')
+    if (st) { st.style.display = 'block'; st.className = 'status err'; st.textContent = (data && data.message) || T.saveFailed }
   }
 
-  // ---- content squeeze -------------------------------------------------------
-  // A real side panel pushes the page instead of overlapping it: when the panel
-  // is expanded we shift the page left by the panel's footprint (margin-right on
-  // <html>). Done via a class + an injected page-level style so a media query can
-  // drop the margin on narrow screens (where the panel goes full width instead).
-  var SIDEBAR_SPACE = 384 // sb width (360) + right gap (14) + a little breathing room
+  function onAnswer(data) {
+    if (!data) return
+    var ref = null
+    if (data.label != null) {
+      for (var i = 0; i < qRefs.length; i++) {
+        if (qRefs[i] && !qRefs[i].isCL && qRefs[i].label && data.label.indexOf(qRefs[i].label.slice(0, 24)) !== -1) { ref = qRefs[i]; break }
+      }
+    }
+    if (!ref && typeof data.index === 'number') ref = qRefs[data.index]
+    if (!ref) return
+    if (data.status === 'drafting') startDraftUI(ref)
+    else endDraftUI(ref, data.status)
+  }
+
+  function onCoverLetter(data) {
+    if (!clRef) return
+    var status = data && data.status
+    if (status === 'generating') startDraftUI(clRef)
+    else endDraftUI(clRef, status === 'done' ? 'done' : status === 'limit' ? 'limit' : 'error')
+  }
+
+  // ---- page evaluation (context + SPA navigation) ----------------------------
+  // Recomputed on mount, on expand, on every URL change and whenever the apply
+  // layer says the page has no form. This is what keeps a job-board page from
+  // sitting on a state nobody drives, and what stops a stale offer from being
+  // shown (or saved) after an in-place navigation to another job.
+  function evaluatePage(fromEmpty) {
+    var next = resolveContext()
+    if (next === 'offer') {
+      var stale = offer.url && offer.url !== location.href
+      if (stale) { offer.loaded = false; offer.data = null; offer.job = null; offer.saved = false; setWidgetScore(null) }
+      setContext('offer', stale)
+      if (!isCollapsed()) runOffer(false)
+      else if (view === 'page') renderPage()
+      return
+    }
+    if (next === 'apply' && !readyFields.length && !fromEmpty) {
+      // A form is there but the apply layer has not reported yet.
+      setContext('apply')
+      return
+    }
+    setContext(next, true)
+  }
+
+  function isCollapsed() { return !!(sbEl && sbEl.classList.contains('collapsed')) }
+
+  function startUrlWatch() {
+    lastHref = location.href
+    if (urlWatch) return
+    urlWatch = setInterval(function () {
+      if (location.href === lastHref) return
+      lastHref = location.href
+      // A new page: nothing from the previous one survives.
+      readyFields = []; readySkipped = []; readyQuestions = []; readyCL = null
+      applyPhase = 'idle'; attachState = null; gateInfo = null; filledCount = 0
+      setWidgetScore(null)
+      evaluatePage(false)
+    }, 800)
+  }
+  function stopUrlWatch() { if (urlWatch) { clearInterval(urlWatch); urlWatch = null } }
+
+  // ---- squeeze ---------------------------------------------------------------
+  // A real side panel pushes the page instead of overlapping it. The margin is
+  // EXACTLY the panel width, so no strip of host-page background shows next to
+  // the panel.
   function ensureSqueezeStyle() {
     if (document.getElementById('jsw-squeeze-style')) return
     var s = document.createElement('style')
     s.id = 'jsw-squeeze-style'
-    s.textContent = 'html.jsw-squeezed{margin-right:' + SIDEBAR_SPACE + 'px !important;' +
-      'transition:margin-right .28s cubic-bezier(.4,0,.2,1) !important;}' +
-      '@media (max-width:720px){html.jsw-squeezed{margin-right:0 !important;}}'
+    s.textContent = 'html.jsw-squeezed{margin-right:' + PANEL_W + 'px !important;' +
+      'transition:margin-right .26s cubic-bezier(.4,0,.2,1) !important;}' +
+      '@media (max-width:560px){html.jsw-squeezed{margin-right:0 !important;}}'
     ;(document.head || document.documentElement).appendChild(s)
   }
   function applySqueeze(on) {
     try {
       if (on) { ensureSqueezeStyle(); document.documentElement.classList.add('jsw-squeezed') }
-      else { document.documentElement.classList.remove('jsw-squeezed') }
+      else document.documentElement.classList.remove('jsw-squeezed')
     } catch (e) { /* noop */ }
   }
   function removeSqueeze() {
@@ -1640,10 +1642,11 @@
     userSetCollapse = true
     storageSet({ sidebarCollapsed: true })
   }
+  function collapseSilent() { if (sbEl) sbEl.classList.add('collapsed'); applySqueeze(false) }
   function expand() {
     if (sbEl) sbEl.classList.remove('collapsed')
     applySqueeze(true)
-    maybeShowOffer()
+    evaluatePage(false)
   }
   function userExpand() {
     expand()
@@ -1651,21 +1654,38 @@
     storageSet({ sidebarCollapsed: false })
   }
 
-  // ---- floating widget: disable state, drag, and the close menu -------------
+  // ---- floating launcher -----------------------------------------------------
   function loadDisableState(cb) {
-    storageGet(['jsw_disabled_all', 'jsw_disabled_domains', 'jsw_widget_pos'], function (o) {
+    storageGet(['jsw_disabled_all', 'jsw_disabled_domains', 'jsw_widget_pos', 'jsw_hidden_until', 'jsw_selected_cv_id'], function (o) {
       o = o || {}
       disabledAll = !!o.jsw_disabled_all
       disabledDomains = o.jsw_disabled_domains || {}
       widgetPos = o.jsw_widget_pos || null
+      selectedCvId = o.jsw_selected_cv_id || null
+      hiddenUntil = o.jsw_hidden_until || {}
       cb()
     })
   }
-  function isDisabledHere() { return disabledAll || !!disabledDomains[HOST] }
+  var hiddenUntil = {}
+  var HIDE_MS = 6 * 60 * 60 * 1000 // "until next visit": 6h of quiet on this host
+  function isDisabledHere() {
+    if (disabledAll || !!disabledDomains[HOST]) return true
+    var until = hiddenUntil[HOST]
+    return !!(until && Date.now() < until)
+  }
+
+  function setWidgetScore(score) {
+    var el = $('wScore'); if (!el) return
+    if (score == null) { el.className = 'w-score'; el.textContent = ''; return }
+    var tier = tierOf(score)
+    var col = tier === 'great' ? 'var(--ok)' : tier === 'good' ? 'var(--blue)' : tier === 'fair' ? 'var(--warn)' : 'var(--bad)'
+    el.textContent = String(score)
+    el.style.background = col
+    el.className = 'w-score on'
+  }
 
   function applyWidgetPos() {
     if (!widgetEl || !widgetPos) return
-    // Clamp to the current viewport in case the window shrank since it was saved.
     var left = Math.max(4, Math.min(widgetPos.left, (window.innerWidth || 800) - 60))
     var top = Math.max(4, Math.min(widgetPos.top, (window.innerHeight || 600) - 60))
     widgetEl.style.left = left + 'px'
@@ -1674,8 +1694,6 @@
     widgetEl.style.bottom = 'auto'
   }
 
-  // Wire the launcher: drag to move (persisted), a plain click opens the panel,
-  // and the corner X opens the disable menu.
   function setupWidget() {
     widgetEl = $('widget'); wMenuEl = $('wMenu')
     if (!widgetEl) return
@@ -1689,7 +1707,6 @@
       e.preventDefault()
     })
 
-    // Document move/up wired ONCE; they read the current widget from module vars.
     if (!dragDocWired) {
       dragDocWired = true
       document.addEventListener('mousemove', function (e) {
@@ -1752,116 +1769,79 @@
     document.removeEventListener('mousedown', outsideMenuClose, true)
   }
 
-  // "hide" = this visit only (no persistence, back on next reload). "domain"/"all"
-  // persist so boot() skips the auto-mount next time. All three tear the UI down
-  // now; the toolbar icon still force-opens past any disable.
+  // "hide" now persists for a few hours on this host, which is what the label
+  // promises: a full-page-load board (Indeed, jobup) used to bring it straight
+  // back on the very next offer. "domain"/"all" persist until turned back on.
+  // The toolbar icon still force-opens past any of the three.
   function onMenuAction(act) {
     closeWidgetMenu()
     if (act === 'domain') { disabledDomains[HOST] = true; storageSet({ jsw_disabled_domains: disabledDomains }) }
     else if (act === 'all') { disabledAll = true; storageSet({ jsw_disabled_all: true }) }
+    else if (act === 'hide') { hiddenUntil[HOST] = Date.now() + HIDE_MS; storageSet({ jsw_hidden_until: hiddenUntil }) }
     teardownVisual()
   }
   function teardownVisual() {
     closeWidgetMenu()
-    removeSqueeze() // give the page back its full width
-    unbindBus() // drop this mount's bus subscriptions so a re-mount does not double them
+    stopUrlWatch()
+    removeSqueeze()
+    unbindBus()
     var host = document.getElementById(HOST_ID)
     if (host) host.remove()
-    // allow a fresh mount if re-opened from the toolbar icon
-    _mounted = false; root = null; sbEl = null; widgetEl = null; wMenuEl = null
+    _mounted = false; root = null; sbEl = null; bodyEl = null; actEl = null; scrollEl = null
+    widgetEl = null; wMenuEl = null
   }
 
   // ---- mount -----------------------------------------------------------------
   function mount() {
     if (document.getElementById(HOST_ID)) return
+    loadFont()
     var host = document.createElement('div')
     host.id = HOST_ID
-    // 0x0 anchor; the fixed-position sidebar/tab escape it and sit above the page.
     host.style.cssText = 'all:initial;position:fixed;top:0;left:0;width:0;height:0;z-index:2147483000;'
     ;(document.body || document.documentElement).appendChild(host)
 
     root = host.attachShadow({ mode: 'open' })
     root.innerHTML = shellHTML()
 
-    sbEl = $('sb')
-    applyView = $('view-apply')
-    chipEl = $('chip'); chipText = $('chipText')
+    sbEl = $('sb'); bodyEl = $('body'); actEl = $('act'); scrollEl = $('scroll')
 
-    // nav
     var nav = $('nav')
     if (nav) nav.addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null
-      if (!b) return
-      switchView(b.getAttribute('data-view'))
+      if (b) switchView(b.getAttribute('data-view'))
     })
-
-    // collapse / tab
     var cb = $('collapseBtn'); if (cb) cb.addEventListener('click', collapse)
+    if (scrollEl) scrollEl.addEventListener('scroll', updateActShadow)
     setupWidget()
 
-    // apply commands
-    var fillBtn = $('fillBtn'); if (fillBtn) fillBtn.addEventListener('click', function () {
-      if (readyFields.length === 0) return
-      // Show progress + lock the view immediately, before autofill's fill events
-      // (and the re-detect they trigger) can race the UI.
-      enterFilling()
-      cmd('startFill')
-    })
-    var stopBtn = $('stopBtn'); if (stopBtn) stopBtn.addEventListener('click', function () { cmd('stopFill') })
-    var cvBtn = $('cvBtn'); if (cvBtn) cvBtn.addEventListener('click', function () { cmd('attachCv') })
-    var clBtn = $('clBtn'); if (clBtn) clBtn.addEventListener('click', function () {
-      if (clBtn.disabled) return
-      onCoverLetter({ status: 'generating' })
-      cmd('generateCoverLetter')
-    })
-    var ctxChange = $('ctxChange'); if (ctxChange) ctxChange.addEventListener('click', function () { switchView('cvs') })
-    var offerSaveBtn = $('offerSaveBtn'); if (offerSaveBtn) offerSaveBtn.addEventListener('click', saveOffer)
-    var savePageBtn = $('savePageBtn'); if (savePageBtn) savePageBtn.addEventListener('click', saveThisPage)
-    var disconnectBtn = $('disconnectBtn'); if (disconnectBtn) disconnectBtn.addEventListener('click', function () {
-      send({ type: 'LOGOUT' }, function () { loaded.profile = false; loadProfile() })
-    })
-
-    // restore collapse preference; else start collapsed (slim tab) until a form
-    // is detected, at which point onReady auto-expands.
     storageGet('sidebarCollapsed', function (o) {
-      // Opened from the toolbar icon: always show it expanded, ignore the stored
-      // collapse preference this once.
       if (iconOpenRequested) { iconOpenRequested = false; userSetCollapse = true; expand(); return }
       if (o && typeof o.sidebarCollapsed === 'boolean') {
         userSetCollapse = true
         if (o.sidebarCollapsed) collapseSilent(); else expand()
-      } else {
-        collapseSilent() // default: tab only, non-intrusive
-      }
+      } else collapseSilent() // default: launcher only, non-intrusive
     })
 
-    // subscribe to the shared bus
     bindBus({
-      ctx: onCtx,
-      detecting: onDetecting,
-      ready: onReady,
-      empty: onEmpty,
-      progress: onProgress,
-      filled: onFilled,
-      attach: onAttach,
-      done: onDone,
-      error: onError,
-      answer: onAnswer,
-      coverletter: onCoverLetter,
+      ctx: onCtx, detecting: onDetecting, ready: onReady, empty: onEmpty,
+      progress: onProgress, filled: onFilled, attach: onAttach, done: onDone,
+      error: onError, answer: onAnswer, coverletter: onCoverLetter,
     })
 
-    // fallback context (in case ctx fired before we subscribed)
-    primeContextFallback()
+    startUrlWatch()
+    evaluatePage(false)
+    replayBusState()
   }
 
-  function collapseSilent() { if (sbEl) sbEl.classList.add('collapsed'); applySqueeze(false) }
+  function replayBusState() {
+    var b = bus()
+    if (!b || typeof b.last !== 'function') return
+    var ready = b.last('ready')
+    if (ready) { try { onReady(ready) } catch (e) { /* noop */ } return }
+    var err = b.last('error')
+    if (err) { try { onError(err) } catch (e) { /* noop */ } }
+  }
 
-  // Mount: resolve the user's app locale (from their cached profile in the SW)
-  // BEFORE building the shell, so the chrome renders in the user's language, not
-  // the ATS page's <html lang>. Never block more than 500ms on it. Runs at most
-  // once; safe to call from any lazy-mount trigger.
-  var _mounted = false
-  var iconOpenRequested = false  // set when the toolbar icon asks to open expanded
   function doMount() {
     if (_mounted) return
     _mounted = true
@@ -1871,73 +1851,38 @@
       if (built) return
       built = true
       mount()
-      // The apply layer may have already reached a terminal state (autofill
-      // detected + emitted 'ready'/'error' before we mounted). Bus emits are not
-      // replayed on subscribe, so pull the last state explicitly.
-      replayBusState()
     }
     var timer = setTimeout(build, 500)
     send({ type: 'GET_PROFILE' }, function (resp) {
       if (resp && resp.locale) lang = pickLang(resp.locale)
       clearTimeout(timer)
       build()
-      // If the 500ms timer mounted the shell in the fallback lang before this
-      // resolved, re-apply every static string in the resolved language.
-      relocalize()
+      relocalizeChrome()
+      if (view === 'page') renderPage()
     })
   }
 
-  function replayBusState() {
-    var b = bus()
-    if (!b || typeof b.last !== 'function') return
-    var ready = b.last('ready')
-    if (ready) { try { onReady(ready) } catch (e) {} return }
-    var err = b.last('error')
-    if (err) { try { onError(err) } catch (e) {} }
-  }
-
   // ---- gated lazy mount ------------------------------------------------------
-  // Broad injection means this script loads on every page. It must render
-  // NOTHING until the page looks like a job application. On a plain page it does
-  // a cheap gate check and returns; it then only reacts to SPA navigation and to
-  // the apply bus (which autofill drives, and only when it too judges the page a
-  // job application). No host/shadow is created until the gate passes.
-  function isLikelyJob() {
-    var b = bus()
-    if (!b) return false
-    var direct = typeof b.isLikelyJobApplication === 'function' && b.isLikelyJobApplication()
-    // A child ATS iframe that reported an apply form via the bridge also counts,
-    // even when the top frame itself has no visible form (embedded Greenhouse).
-    var framed = typeof b.hasFrameApply === 'function' && b.hasFrameApply()
-    return !!(direct || framed)
-  }
-
-  function maybeMount() {
-    if (_mounted) return
-    if (isDisabledHere()) return // a disable set after lazy-arming still wins
-    if (!isLikelyJob()) return
-    doMount()
-  }
-
   var lazyOffs = []
   function clearLazyTriggers() {
-    for (var i = 0; i < lazyOffs.length; i++) { try { lazyOffs[i]() } catch (e) {} }
+    for (var i = 0; i < lazyOffs.length; i++) { try { lazyOffs[i]() } catch (e) { /* noop */ } }
     lazyOffs = []
     window.removeEventListener('popstate', maybeMount)
   }
-
+  function maybeMount() {
+    if (_mounted) return
+    if (isDisabledHere()) return
+    if (!isApplyPage() && !isRelevant()) return
+    doMount()
+  }
   function armLazyMount() {
     var b = bus()
     if (b && typeof b.on === 'function') {
-      // autofill emits these ONLY when it considers the page an application, so
-      // any of them is a valid trigger to mount lazily.
       lazyOffs.push(b.on('detecting', maybeMount))
       lazyOffs.push(b.on('ready', maybeMount))
       lazyOffs.push(b.on('error', maybeMount))
       lazyOffs.push(b.on('empty', maybeMount))
     }
-    // SPA navigation into an application (URL change) re-checks the gate. Cheap
-    // event listeners, never an observer, so a non-job page stays inert.
     var origPush = history.pushState
     history.pushState = function () {
       var ret = origPush.apply(this, arguments)
@@ -1947,18 +1892,14 @@
     window.addEventListener('popstate', maybeMount)
   }
 
-  // Reveal the sidebar in response to the toolbar icon: force-mount (bypassing the
-  // auto-gate, so it also opens on a job listing that is not yet an apply form)
-  // and expand, but ONLY on a relevant site. Returns whether it opened, so the SW
-  // can fall back to opening the dashboard when it did not.
+  // Toolbar icon: force-mount (bypassing the auto-gate, so it also opens on a
+  // listing that is not an apply form) and expand, but only on a relevant site.
   function revealSidebar() {
-    var b = bus()
-    if (!(b && typeof b.isRelevantSite === 'function' && b.isRelevantSite())) return false
+    if (!isRelevant() && !isApplyPage()) return false
     if (!_mounted) { iconOpenRequested = true; doMount() } else { userExpand() }
     return true
   }
 
-  // Toolbar icon click (the popup is gone) is relayed by the SW as JSW_OPEN_SIDEBAR.
   try {
     if (chrome && chrome.runtime && chrome.runtime.onMessage) {
       chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
@@ -1972,17 +1913,9 @@
   } catch (e) { /* noop */ }
 
   function boot() {
-    // Load the disable state first: if this domain (or all pages) was disabled via
-    // the widget menu, stay fully inert on load. The toolbar icon still force-opens.
     loadDisableState(function () {
       if (isDisabledHere()) return
-      // The gate reads the DOM; give apply-shared a beat to initialize the bus and
-      // let document_idle settle, matching autofill/cv-attach boot timing. The
-      // floating launcher shows on any relevant site (job board / ATS / apply), not
-      // only a live apply form.
-      var b = bus()
-      var relevant = !!(b && typeof b.isRelevantSite === 'function' && b.isRelevantSite())
-      if (relevant || isLikelyJob()) { doMount(); return }
+      if (isRelevant() || isApplyPage()) { doMount(); return }
       armLazyMount()
     })
   }

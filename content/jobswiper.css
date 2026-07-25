@@ -1,5 +1,4 @@
-/* Brand tokens (kept in sync with content/overlay.css and popup/popup.html).
-   Brand blue = #0064be. */
+/* Brand tokens. Brand blue = #0064be. */
 :root {
   --js-blue: #0064be;
   --js-ink: #18181b;

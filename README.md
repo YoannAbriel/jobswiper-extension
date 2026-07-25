@@ -10,6 +10,5 @@ Save jobs from any website → generate tailored CVs, cover letters & interview 
 ## Structure
 - `manifest.json` — Chrome extension manifest v3
 - `background.js` — Service worker (API calls)
-- `content/` — Content scripts for job boards
-- `popup/` — Extension popup UI
+- `content/` — Content scripts (sidebar, apply, autofill, CV attach)
 

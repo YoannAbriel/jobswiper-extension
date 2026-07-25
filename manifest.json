@@ -11,8 +11,7 @@
     "alarms",
     "notifications",
     "tabs",
-    "scripting",
-    "webNavigation"
+    "scripting"
   ],
   "browser_specific_settings": {
     "gecko": {
@@ -56,55 +55,6 @@
   "content_scripts": [
     {
       "matches": [
-        "https://*.indeed.com/*",
-        "https://*.indeed.fr/*",
-        "https://*.indeed.de/*",
-        "https://*.indeed.co.uk/*",
-        "https://*.indeed.co.in/*",
-        "https://*.indeed.ca/*",
-        "https://*.indeed.com.au/*"
-      ],
-      "js": ["utils/shared.js", "utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/indeed.js"],
-      "css": ["content/jobswiper.css", "content/overlay.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://*.linkedin.com/jobs/*",
-        "https://*.linkedin.com/comm/jobs/*"
-      ],
-      "js": ["content/linkedin-main.js"],
-      "world": "MAIN",
-      "run_at": "document_start"
-    },
-    {
-      "matches": [
-        "https://*.linkedin.com/jobs/*",
-        "https://*.linkedin.com/comm/jobs/*"
-      ],
-      "js": ["utils/shared.js", "utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/linkedin.js"],
-      "css": ["content/jobswiper.css", "content/overlay.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://*.jobup.ch/*",
-        "https://*.jobs.ch/*"
-      ],
-      "js": ["utils/shared.js", "utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/jobup.js"],
-      "css": ["content/jobswiper.css", "content/overlay.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://*.welcometothejungle.com/*"
-      ],
-      "js": ["utils/shared.js", "utils/extract-helpers.js", "utils/capture-flow.js", "utils/match.js", "content/wttj.js"],
-      "css": ["content/jobswiper.css", "content/overlay.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
         "https://jobswiper.ai/*",
         "https://www.jobswiper.ai/*"
       ],
@@ -138,7 +88,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/icon128.png", "icons/icon48.png"],
+      "resources": ["icons/icon128.png", "icons/icon48.png", "fonts/nunito-latin.woff2"],
       "matches": ["https://*/*"]
     }
   ],

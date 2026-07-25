@@ -3,8 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/unit/",
-    "test:protocol": "node test/protocol/capture-run.mjs"
+    "test": "node --test test/unit/"
   },
   "devDependencies": {
     "playwright": "^1.49.0"

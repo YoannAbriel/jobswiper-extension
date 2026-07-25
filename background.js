@@ -3,11 +3,20 @@
  * Handles API calls to JobSwiper backend.
  */
 
-// Shared helpers (API_BASE, fetchWithTimeout, extVersion) live in utils/shared.js
-// so the four site content scripts and this service worker do not each keep a
-// copy. importScripts is valid because this is a classic (non-module) SW.
-importScripts('utils/shared.js')
-const { API_BASE, fetchWithTimeout, extVersion } = self.JobSwiperShared
+const API_BASE = 'https://www.jobswiper.ai'
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 10000) {
+  const controller = new AbortController()
+  const id = setTimeout(() => controller.abort(), timeoutMs)
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(id))
+}
+
+// Current extension version, read from the manifest. Sent as the
+// X-JobSwiper-Ext-Version request header so the app can log which build a
+// request came from.
+function extVersion() {
+  try { return chrome.runtime.getManifest().version } catch { return '' }
+}
 
 // i18n helper: resolve a message key, falling back to the key itself.
 const t = (key, subs) => chrome.i18n.getMessage(key, subs) || key
@@ -480,15 +489,6 @@ async function propagateSessionToApp(refreshed) {
 // Run on install + service worker wake
 autoConnect()
 
-// Job sites the content scripts inject into. URL pattern only — used to decide
-// whether the active tab is auto-importable on first install.
-const SUPPORTED_JOB_HOST_REGEX = /(linkedin\.com\/(?:comm\/)?jobs\/|indeed\.com\/|wttj\.co|welcometothejungle\.com|jobup\.ch|jobs\.ch)/i
-
-function isSupportedJobSite(url) {
-  if (!url) return false
-  try { return SUPPORTED_JOB_HOST_REGEX.test(url) } catch { return false }
-}
-
 // YOA-217: when the dashboard tab is open, broadcast import events into it
 // so it can refresh its sidebar counts + show a toast without a manual reload.
 async function broadcastJobImported(payload) {
@@ -520,17 +520,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     await chrome.tabs.create({ url: `${API_BASE}/dashboard/search?welcome=extension` })
   } catch {}
 
-  // If the active tab is already a job page, ask its content script to import
-  // the visible job. Fails silently if the user isn't logged in yet.
-  try {
-    const [active] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-    if (active && isSupportedJobSite(active.url)) {
-      try {
-        await chrome.tabs.sendMessage(active.id, { type: 'AUTO_IMPORT_CURRENT_JOB' })
-      } catch {}
-    }
-  } catch {}
-
   // Friendly system notification so the user has visible confirmation that
   // the extension is alive even if they're not on a job site yet.
   try {
@@ -544,56 +533,10 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   } catch {}
 })
 
-// YOA-238: SPA navigation INTO /jobs/ from a non-/jobs/ origin (feed, profile,
-// search) does not re-trigger manifest content_scripts, so the save bar never
-// appears until a hard refresh. On every history state update matching /jobs/,
-// probe whether the content script is already loaded and inject it on miss.
-// The sentinels in linkedin.js + linkedin-main.js make injection idempotent.
-if (chrome.webNavigation?.onHistoryStateUpdated) {
-  chrome.webNavigation.onHistoryStateUpdated.addListener(
-    async (details) => {
-      if (details.frameId !== 0) return
-      const tabId = details.tabId
-
-      let alreadyLoaded = false
-      try {
-        const [res] = await chrome.scripting.executeScript({
-          target: { tabId },
-          func: () => !!window.__jobswiper_linkedin_loaded,
-        })
-        alreadyLoaded = !!res?.result
-      } catch {
-        return
-      }
-
-      if (!alreadyLoaded) {
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['utils/shared.js', 'utils/match.js', 'content/linkedin.js'],
-          })
-          await chrome.scripting.insertCSS({
-            target: { tabId },
-            files: ['content/jobswiper.css', 'content/overlay.css'],
-          })
-          await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['content/linkedin-main.js'],
-            world: 'MAIN',
-          })
-        } catch {}
-      }
-
-      chrome.tabs.sendMessage(tabId, { type: 'LINKEDIN_NAV', url: details.url }).catch(() => {})
-    },
-    { url: [{ hostSuffix: 'linkedin.com', pathPrefix: '/jobs/' }, { hostSuffix: 'linkedin.com', pathPrefix: '/comm/jobs/' }] },
-  )
-}
-
 // Async message handlers wrapped in a single dispatch, so we can use await
 // throughout and always return `true` to keep the channel open.
-// Toolbar icon (no popup anymore): open the sidebar on a relevant page (job
-// board / ATS / application form). The sidebar is a job-only surface, so on an
+// Toolbar icon: open the sidebar on a relevant page (job board / ATS /
+// application form). The sidebar is a job-only surface, so on an
 // unrelated page, or a page without our content script (chrome://, the store),
 // we fall back to opening the JobSwiper dashboard so the click is never inert.
 chrome.action.onClicked.addListener((tab) => {
@@ -668,8 +611,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return
         }
         case 'STORE_AUTH': {
-          // Single-writer entry for the auth bundle so popup, detect, and
-          // the SW itself never race on chrome.storage.local writes.
+          // Single-writer entry for the auth bundle so detect and the SW
+          // itself never race on chrome.storage.local writes.
           const update = { token: message.token }
           if (message.refresh_token !== undefined) update.refresh_token = message.refresh_token
           if (message.expires_at !== undefined) update.expires_at = message.expires_at
