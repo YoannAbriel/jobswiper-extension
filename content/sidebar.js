@@ -616,6 +616,7 @@
   var gateInfo = null               // { kind, message, href }
   var applyPhase = 'idle'           // idle | filling | filled
   var readyFields = [], readySkipped = [], readyQuestions = [], readyCL = null
+  var readyUrl = ''            // the URL the current apply payload was reported for
   var cvCtx = null                  // { name, tailored } from the ctx bus event
   var filledCount = 0, detailOpen = false
   var qRefs = [], clRef = null, fieldRefs = [], progRef = null, foldRef = null
@@ -888,8 +889,12 @@
     offer.saved = false
     offer.pending = true
     offer.job = scrapeJob()
+    var askedFor = location.href
     if (view === 'page' && ctx === 'offer') renderOffer()
     send({ type: 'ANALYZE_JOB', job: offer.job }, function (resp) {
+      // Navigated away while this was in flight: the answer describes another
+      // job, and painting it under the current title would be a lie.
+      if (askedFor !== location.href) return
       offer.pending = false
       // `false` marks a transient failure (auth, network, timeout), which is not
       // the same as an authenticated user whose profile yields no score.
@@ -1007,9 +1012,13 @@
     setBody(html)
 
     // actions
-    if (applyPhase === 'idle' && readyFields.length) {
-      setAct('<button class="btn btn-p" id="fillBtn">' + IC.check + '<span>' + esc(T.fillBtn(readyFields.length)) + '</span></button>' +
-        (attachState ? '' : '<button class="btn btn-g" id="attachBtn">' + esc(T.attachCta) + '</button>') +
+    if (applyPhase === 'idle') {
+      // A resume-only form has no mapped fields but still needs the CV control,
+      // so the attach button is never tied to the field count.
+      setAct((readyFields.length
+        ? '<button class="btn btn-p" id="fillBtn">' + IC.check + '<span>' + esc(T.fillBtn(readyFields.length)) + '</span></button>'
+        : '') +
+        (attachState ? '' : '<button class="btn btn-' + (readyFields.length ? 'g' : 'p') + '" id="attachBtn">' + esc(T.attachCta) + '</button>') +
         '<div class="foot">' + esc(T.submitYours) + '</div>')
     } else if (applyPhase === 'filling') {
       setAct('<button class="btn btn-p" disabled><span class="spin"></span><span>' + esc(T.filling(0, readyFields.length)) + '</span></button>')
@@ -1351,7 +1360,8 @@
       var html = head + '<div class="rows">'
       resp.cvs.forEach(function (cv) {
         var on = cv.id === current
-        html += '<button class="r" data-cv="' + esc(cv.id) + '">' +
+        html += '<button class="r" data-cv="' + esc(cv.id) + '" data-title="' + esc(cv.title || 'CV') + '"' +
+          ' data-tailored="' + (cv.isPerJob ? '1' : '0') + '">' +
           '<span class="m"><b>' + esc(cv.title || 'CV') + '</b></span>' +
           '<span class="st' + (on ? ' on' : '') + '">' + esc(on ? T.active : T.use) + '</span></button>'
       })
@@ -1361,7 +1371,9 @@
       var btns = block2.querySelectorAll('button[data-cv]')
       for (var i = 0; i < btns.length; i++) {
         ;(function (btn) {
-          btn.addEventListener('click', function () { pickCv(btn.getAttribute('data-cv')) })
+          btn.addEventListener('click', function () {
+            pickCv(btn.getAttribute('data-cv'), btn.getAttribute('data-title'), btn.getAttribute('data-tailored') === '1')
+          })
         })(btns[i])
       }
     })
@@ -1372,11 +1384,16 @@
   // the attach layer read it back, otherwise "Use" is a lie that resets on the
   // next page.
   var selectedCvId = null
-  function pickCv(id) {
+  function pickCv(id, title, tailored) {
     if (!id) return
     selectedCvId = id
     storageSet({ jsw_selected_cv_id: id })
     cmd('selectCv', id)
+    // The ctx event that feeds the apply header comes from the server's own
+    // selection, which cannot record this choice on a raw ATS page. Reflect it
+    // here too, otherwise the header would name one CV while the attach layer
+    // sends another.
+    if (title) cvCtx = { name: title, tailored: !!tailored }
     loadCvs()
   }
 
@@ -1471,6 +1488,7 @@
     readySkipped = (data && Array.isArray(data.skipped)) ? data.skipped : []
     readyQuestions = (data && Array.isArray(data.questions)) ? data.questions : []
     readyCL = (data && data.coverLetter) || null
+    readyUrl = location.href
     detailOpen = false
     setContext('apply', true)
     if (!userSetCollapse) expand()
@@ -1575,19 +1593,19 @@
   // layer says the page has no form. This is what keeps a job-board page from
   // sitting on a state nobody drives, and what stops a stale offer from being
   // shown (or saved) after an in-place navigation to another job.
-  function evaluatePage(fromEmpty) {
+  function evaluatePage(fromEmpty, force) {
     var next = resolveContext()
     if (next === 'offer') {
       var stale = offer.url && offer.url !== location.href
       if (stale) { offer.loaded = false; offer.data = null; offer.job = null; offer.saved = false; setWidgetScore(null) }
-      setContext('offer', stale)
+      setContext('offer', stale || force)
       if (!isCollapsed()) runOffer(false)
       else if (view === 'page') renderPage()
       return
     }
     if (next === 'apply' && !readyFields.length && !fromEmpty) {
       // A form is there but the apply layer has not reported yet.
-      setContext('apply')
+      setContext('apply', force)
       return
     }
     setContext(next, true)
@@ -1601,11 +1619,17 @@
     urlWatch = setInterval(function () {
       if (location.href === lastHref) return
       lastHref = location.href
-      // A new page: nothing from the previous one survives.
-      readyFields = []; readySkipped = []; readyQuestions = []; readyCL = null
-      applyPhase = 'idle'; attachState = null; gateInfo = null; filledCount = 0
+      attachState = null; gateInfo = null; filledCount = 0
       setWidgetScore(null)
-      evaluatePage(false)
+      // The apply layer runs its own SPA detection on a different cadence: if it
+      // already reported a form FOR THIS URL, that payload is current and must
+      // survive, otherwise the panel would keep a rendered field list backed by
+      // an emptied array and the Fill button would silently do nothing.
+      if (readyUrl !== location.href) {
+        readyFields = []; readySkipped = []; readyQuestions = []; readyCL = null
+        applyPhase = 'idle'
+      }
+      evaluatePage(false, true)
     }, 800)
   }
   function stopUrlWatch() { if (urlWatch) { clearInterval(urlWatch); urlWatch = null } }
@@ -1783,6 +1807,7 @@
   function teardownVisual() {
     closeWidgetMenu()
     stopUrlWatch()
+    clearFillWatchdog()
     removeSqueeze()
     unbindBus()
     var host = document.getElementById(HOST_ID)
@@ -1814,23 +1839,28 @@
     if (scrollEl) scrollEl.addEventListener('scroll', updateActShadow)
     setupWidget()
 
-    storageGet('sidebarCollapsed', function (o) {
-      if (iconOpenRequested) { iconOpenRequested = false; userSetCollapse = true; expand(); return }
-      if (o && typeof o.sidebarCollapsed === 'boolean') {
-        userSetCollapse = true
-        if (o.sidebarCollapsed) collapseSilent(); else expand()
-      } else collapseSilent() // default: launcher only, non-intrusive
-    })
-
     bindBus({
       ctx: onCtx, detecting: onDetecting, ready: onReady, empty: onEmpty,
       progress: onProgress, filled: onFilled, attach: onAttach, done: onDone,
       error: onError, answer: onAnswer, coverletter: onCoverLetter,
     })
-
     startUrlWatch()
-    evaluatePage(false)
-    replayBusState()
+
+    // The collapse preference is async, and the offer analysis must not fire
+    // before it is known: the panel starts expanded in the markup, so evaluating
+    // the page any earlier would burn a match-score call on every listing for a
+    // user whose panel is meant to stay closed.
+    storageGet('sidebarCollapsed', function (o) {
+      if (iconOpenRequested) { iconOpenRequested = false; userSetCollapse = true; expand() }
+      else if (o && typeof o.sidebarCollapsed === 'boolean') {
+        userSetCollapse = true
+        if (o.sidebarCollapsed) collapseSilent(); else expand()
+      } else collapseSilent() // default: launcher only, non-intrusive
+      // expand() evaluates on its own; collapsed still needs a context so the
+      // body is ready the moment the user opens it, minus the network call.
+      if (isCollapsed()) evaluatePage(false)
+      replayBusState()
+    })
   }
 
   function replayBusState() {

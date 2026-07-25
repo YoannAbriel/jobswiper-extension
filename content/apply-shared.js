@@ -337,8 +337,8 @@
     if (hostMatches(host, 'search.yahoo.com')) return true
     if (hostMatches(host, 'ecosia.org')) return true
     if (hostMatches(host, 'qwant.com')) return true
-    // LinkedIn: only /jobs surfaces are application-relevant (the linkedin.js
-    // capture script owns the rest). Everything else on linkedin is a hard NO.
+    // LinkedIn: only /jobs surfaces are application-relevant. The feed, messaging
+    // and profiles are a hard NO.
     if (hostMatches(host, 'linkedin.com') &&
         path.indexOf('/jobs') !== 0 && path.indexOf('/comm/jobs') !== 0) return true
     return false
@@ -360,7 +360,7 @@
     return isLinkedInJobHost(location.hostname, location.pathname)
   }
 
-  // Job-board hosts (mirror the capture-script manifest matches). Used, together
+  // Job-board hosts. Used, together
   // with the ATS allowlist and the apply-form heuristic, to decide whether the
   // sidebar may be OPENED from the toolbar icon on a given site: the sidebar is a
   // job-only surface, so the icon does nothing (falls back to the dashboard) on
